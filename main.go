@@ -45,6 +45,12 @@ type Message struct {
 	Username  string // Добавлено поле для имени пользователя
 }
 
+type Client struct {
+	Conn   *websocket.Conn
+	UserID int
+	ChatID int
+}
+
 var db *sql.DB
 var store = sessions.NewCookieStore([]byte("secret-key"))
 var upgrader = websocket.Upgrader{
@@ -53,7 +59,7 @@ var upgrader = websocket.Upgrader{
 	},
 }
 
-var clients = make(map[*websocket.Conn]bool)
+var clients = make(map[*Client]bool)
 
 func createTable() {
 	// Очищаем таблицы
@@ -442,9 +448,6 @@ func wsChatHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	defer conn.Close()
 
-	clients[conn] = true
-	defer delete(clients, conn)
-
 	session, _ := store.Get(r, "session-name")
 	username := session.Values["username"].(string)
 
@@ -454,6 +457,11 @@ func wsChatHandler(w http.ResponseWriter, r *http.Request) {
 		log.Println("Ошибка получения ID пользователя:", err)
 		return
 	}
+
+	// Создаем новый клиент и добавляем его в мапу
+	client := &Client{Conn: conn, UserID: userID, ChatID: atoi(chatID)} // Преобразуем chatID в int
+	clients[client] = true
+	defer delete(clients, client)
 
 	for {
 		var msg Message
@@ -473,16 +481,22 @@ func wsChatHandler(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 
-		// Отправляем сообщение всем подключенным клиентам
+		// Отправляем сообщение только участникам текущего чата
 		for client := range clients {
-			if err := client.WriteJSON(msg); err != nil {
-				log.Println("Ошибка отправки сообщения:", err)
-				client.Close()
-				delete(clients, client)
+			if client.ChatID == msg.ChatID { // Проверяем, что клиент находится в том же чате
+				if err := client.Conn.WriteJSON(msg); err != nil {
+					log.Println("Ошибка отправки сообщения:", err)
+					client.Conn.Close()
+					delete(clients, client)
+				}
 			}
 		}
 	}
+}
 
+func atoi(s string) int {
+	i, _ := strconv.Atoi(s)
+	return i
 }
 
 func addUserToChatHandler(w http.ResponseWriter, r *http.Request) {
