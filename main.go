@@ -368,11 +368,6 @@ func chatHandler(w http.ResponseWriter, r *http.Request) {
 	}{Chat: chat, Messages: messages, Participants: participants, Username: username})
 }
 
-func sendMessageHandler(w http.ResponseWriter, r *http.Request) {
-	// Этот обработчик больше не нужен, так как мы используем WebSocket
-	http.Error(w, "Метод не разрешен", http.StatusMethodNotAllowed)
-}
-
 func wsChatHandler(w http.ResponseWriter, r *http.Request) {
 	chatID := mux.Vars(r)["id"]
 	conn, err := upgrader.Upgrade(w, r, nil)
@@ -431,73 +426,6 @@ func wsChatHandler(w http.ResponseWriter, r *http.Request) {
 func atoi(s string) int {
 	i, _ := strconv.Atoi(s)
 	return i
-}
-
-func addUserToChatHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method == http.MethodPost {
-		chatIDStr := r.FormValue("chat_id") // Получаем chat_id как строку
-		userIDStr := r.FormValue("user_id") // Получаем user_id как строку
-
-		// Преобразуем chatID и userID в int
-		chatID, err := strconv.Atoi(chatIDStr)
-		if err != nil {
-			http.Error(w, "Неверный идентификатор чата", http.StatusBadRequest)
-			return
-		}
-
-		userID, err := strconv.Atoi(userIDStr)
-		if err != nil {
-			http.Error(w, "Неверный идентификатор пользователя", http.StatusBadRequest)
-			return
-		}
-
-		_, err = db.Exec("INSERT INTO chat_users (chat_id, user_id) VALUES ($1, $2)", chatID, userID)
-		if err != nil {
-			http.Error(w, "Ошибка добавления пользователя в чат", http.StatusInternalServerError)
-			return
-		}
-
-		http.Redirect(w, r, fmt.Sprintf("/chat/%d", chatID), http.StatusSeeOther)
-		return
-	}
-}
-
-func addUserHandler(w http.ResponseWriter, r *http.Request) {
-	if !isAuthenticated(r) {
-		http.Redirect(w, r, "/login", http.StatusSeeOther)
-		return
-	}
-
-	chatIDStr := mux.Vars(r)["id"]         // Получаем ID чата как строку
-	chatID, err := strconv.Atoi(chatIDStr) // Преобразуем в int
-	if err != nil {
-		http.Error(w, "Неверный идентификатор чата", http.StatusBadRequest)
-		return
-	}
-
-	// Получаем всех пользователей
-	rows, err := db.Query("SELECT id, username FROM users")
-	if err != nil {
-		http.Error(w, "Ошибка получения пользователей", http.StatusInternalServerError)
-		return
-	}
-	defer rows.Close()
-
-	var users []User
-	for rows.Next() {
-		var user User
-		if err := rows.Scan(&user.ID, &user.Username); err != nil {
-			http.Error(w, "Ошибка получения данных", http.StatusInternalServerError)
-			return
-		}
-		users = append(users, user)
-	}
-
-	tmpl := template.Must(template.ParseFiles("templates/add_user.html"))
-	tmpl.Execute(w, struct {
-		ChatID int
-		Users  []User
-	}{ChatID: chatID, Users: users}) // Передаем chatID как int
 }
 
 func createPrivateChatHandler(w http.ResponseWriter, r *http.Request) {
@@ -691,8 +619,6 @@ func main() {
 	r.HandleFunc("/login", loginHandler).Methods("GET", "POST")
 	r.HandleFunc("/chats", chatsHandler).Methods("GET")
 	r.HandleFunc("/chat/{id:[0-9]+}", chatHandler).Methods("GET")
-	r.HandleFunc("/chat/{id:[0-9]+}/add_user", addUserHandler).Methods("GET")
-	r.HandleFunc("/chat/{id:[0-9]+}/add_user", addUserToChatHandler).Methods("POST")
 	r.HandleFunc("/ws/chat/{id:[0-9]+}", wsChatHandler) // Обработчик WebSocket
 	r.HandleFunc("/logout", logoutHandler).Methods("POST")
 
