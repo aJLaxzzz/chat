@@ -1,29 +1,20 @@
 <!DOCTYPE html>
-<html>
+<html lang="ru">
 <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Чаты</title>
 </head>
 <body>
-    <h1>Привет, {{.Username}}!</h1>
-    <h1>Список чатов</h1>
-    <table>
-        <tr>
-            <th>ID</th>
-            <th>Название</th>
-            <th>Тип</th>
-        </tr>
-        {{range .Chats}}
-        <tr>
-            <td>{{.ID}}</td>
-            <td><a href="/chat/{{.ID}}">{{.Name}}</a></td>
-            <td>{{if .IsPrivate}}Личный{{else}}Групповой{{end}}</td>
-        </tr>
-        {{end}}
-    </table>
-    <a href="/create_chat">Создать новый чат</a>
-    <form action="/logout" method="post">
+    <h1>Чаты пользователя: {{ .Username }}</h1>
+    <a href="/create_chat">Создать чат</a>
+    <form action="/logout" method="POST">
         <button type="submit">Выйти</button>
     </form>
-    
+    <ul>
+        {{ range .Chats }}
+            <li><a href="/chat/{{ .ID }}">{{ .Name }}</a> ({{ if .IsPrivate }}Личный{{ else }}Групповой{{ end }})</li>
+        {{ end }}
+    </ul>
 </body>
 </html>

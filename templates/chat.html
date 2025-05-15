@@ -1,28 +1,64 @@
 <!DOCTYPE html>
-<html>
+<html lang="ru">
 <head>
-    <title>Чат: {{.Chat.Name}}</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Чат: {{ .Chat.Name }}</title>
+    <style>
+        /* Ваши стили */
+    </style>
 </head>
 <body>
-    <h1>Чат: {{.Chat.Name}}</h1>
-    <h2>Сообщения</h2>
-    <div>
-        {{range .Messages}}
-        <div>
-            <strong>{{.CreatedAt.Format "2006-01-02 15:04:05"}} - {{.Username}}:</strong> {{.Content}}
-        </div>
-        {{end}}
-    </div>
-    <form action="/chat/{{.Chat.ID}}/send" method="post">
-        <input type="hidden" name="chat_id" value="{{.Chat.ID}}">
-        <label for="content">Сообщение:</label>
-        <input type="text" id="content" name="content" required>
-        <button type="submit">Отправить</button>
-    </form>
-    <a href="/chats">Назад к чатам</a>
-    <form action="/chat/{{.Chat.ID}}/add_user" method="get">
-        <button type="submit">Добавить пользователя в чат</button>
-    </form>
+    <h1>Чат: {{ .Chat.Name }}</h1>
     
+    <div>
+        <h2>Участники чата:</h2>
+        <ul>
+            {{ range .Participants }}
+                <li>{{ .Username }}</li>
+            {{ end }}
+        </ul>
+    </div>
+
+    <div id="messages">
+        {{ range .Messages }}
+            <div class="message">
+                <strong>{{ .Username }}:</strong> {{ .Content }}
+            </div>
+        {{ end }}
+    </div>
+    <input type="text" id="message" placeholder="Введите сообщение..." autocomplete="off">
+    <button id="send">Отправить</button>
+    <form action="/chats" method="get">
+        <button type="submit">← Назад к чатам</button>
+    </form>
+
+    <script>
+        const chatID = {{ .Chat.ID }};
+        const ws = new WebSocket(`ws://${window.location.host}/ws/chat/${chatID}`);
+
+        ws.onmessage = function(event) {
+            const msg = JSON.parse(event.data);
+            const messagesDiv = document.getElementById('messages');
+            messagesDiv.innerHTML += `<div class="message"><strong>${msg.Username}:</strong> ${msg.Content}</div>`;
+            messagesDiv.scrollTop = messagesDiv.scrollHeight; // Прокрутка вниз
+        };
+
+        document.getElementById('send').onclick = function() {
+            const messageInput = document.getElementById('message');
+            const message = messageInput.value;
+            if (message.trim() !== "") {
+                ws.send(JSON.stringify({ Content: message }));
+                messageInput.value = ''; // Очистка поля ввода
+            }
+        };
+
+        // Отправка сообщения по нажатию клавиши Enter
+        document.getElementById('message').addEventListener('keypress', function(event) {
+            if (event.key === 'Enter') {
+                document.getElementById('send').click();
+            }
+        });
+    </script>
 </body>
 </html>

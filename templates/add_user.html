@@ -1,21 +1,22 @@
 <!DOCTYPE html>
-<html>
+<html lang="ru">
 <head>
-    <title>Добавить пользователя в чат</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Добавить пользователя</title>
 </head>
 <body>
     <h1>Добавить пользователя в чат</h1>
-    <form method="post">
+    <form method="POST">
         <input type="hidden" name="chat_id" value="{{.ChatID}}">
         <label for="user_id">Выберите пользователя:</label>
-        <select id="user_id" name="user_id" required>
+        <select name="user_id" required>
             {{range .Users}}
-            <option value="{{.ID}}">{{.Username}}</option>
+                <option value="{{.ID}}">{{.Username}}</option>
             {{end}}
         </select>
         <button type="submit">Добавить</button>
     </form>
     <a href="/chat/{{.ChatID}}">Назад к чату</a>
-    
 </body>
 </html>

@@ -11,6 +11,7 @@ import (
 
 	"github.com/gorilla/mux"
 	"github.com/gorilla/sessions"
+	"github.com/gorilla/websocket"
 	_ "github.com/lib/pq"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -46,16 +47,19 @@ type Message struct {
 
 var db *sql.DB
 var store = sessions.NewCookieStore([]byte("secret-key"))
+var upgrader = websocket.Upgrader{
+	CheckOrigin: func(r *http.Request) bool {
+		return true
+	},
+}
+
+var clients = make(map[*websocket.Conn]bool)
 
 func createTable() {
 	// Очищаем таблицы
-	_, err := db.Exec("TRUNCATE TABLE messages, chat_users, chats, users RESTART IDENTITY CASCADE;")
-	if err != nil {
-		log.Fatal(err)
-	}
 
 	// Создаем таблицы
-	_, err = db.Exec(`
+	_, err := db.Exec(`
 	CREATE TABLE IF NOT EXISTS users (
 		id SERIAL PRIMARY KEY,
 		username TEXT NOT NULL UNIQUE,
@@ -104,33 +108,6 @@ func createTable() {
 		log.Fatal(err)
 	}
 
-	// Вставляем предсозданных пользователей
-	predefinedUsers := []struct {
-		username   string
-		name       string
-		surname    string
-		patronymic string
-		password   string
-		status     string
-	}{
-		{"1", "1", "1", "1", "1", "offline"},
-		{"2", "2", "2", "2", "2", "offline"},
-		{"3", "3", "3", "3", "3", "offline"},
-	}
-
-	for _, user := range predefinedUsers {
-		// Хешируем пароль
-		hashedPassword, err := bcrypt.GenerateFromPassword([]byte(user.password), bcrypt.DefaultCost)
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		_, err = db.Exec("INSERT INTO users (username, name, surname, patronymic, password, status) VALUES ($1, $2, $3, $4, $5, $6)",
-			user.username, user.name, user.surname, user.patronymic, hashedPassword, user.status)
-		if err != nil {
-			log.Fatal(err)
-		}
-	}
 }
 
 func isAuthenticated(r *http.Request) bool {
@@ -149,6 +126,7 @@ func registerHandler(w http.ResponseWriter, r *http.Request) {
 		name := r.FormValue("name")
 		surname := r.FormValue("surname")
 		patronymic := r.FormValue("patronymic")
+		// Хешируем пароль
 		password := r.FormValue("password")
 
 		hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
@@ -256,12 +234,11 @@ func chatsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Измените запрос, чтобы получить все чаты, в которых участвует пользователь
 	rows, err := db.Query(`
-		SELECT c.id, c.name, c.is_private 
-		FROM chats c
-		JOIN chat_users cu ON c.id = cu.chat_id
-		WHERE cu.user_id = $1`, userID)
+				SELECT c.id, c.name, c.is_private 
+				FROM chats c
+				JOIN chat_users cu ON c.id = cu.chat_id
+				WHERE cu.user_id = $1`, userID)
 	if err != nil {
 		http.Error(w, "Ошибка получения чатов", http.StatusInternalServerError)
 		return
@@ -313,21 +290,70 @@ func createChatHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		// Добавляем пользователя в таблицу chat_users
+		// Добавляем создателя в таблицу chat_users
 		_, err = db.Exec("INSERT INTO chat_users (chat_id, user_id) VALUES ($1, $2)", chatID, userID)
 		if err != nil {
 			http.Error(w, "Ошибка добавления пользователя в чат", http.StatusInternalServerError)
 			return
 		}
 
+		// Если это групповой чат, добавляем всех выбранных пользователей
+		if !isPrivate {
+			userIDs := r.Form["user_ids"] // Получаем массив ID пользователей
+			for _, userIDToAddStr := range userIDs {
+				userIDToAdd, err := strconv.Atoi(userIDToAddStr)
+				if err != nil {
+					http.Error(w, "Ошибка получения ID пользователя", http.StatusBadRequest)
+					return
+				}
+				_, err = db.Exec("INSERT INTO chat_users (chat_id, user_id) VALUES ($1, $2)", chatID, userIDToAdd)
+				if err != nil {
+					http.Error(w, "Ошибка добавления пользователя в чат", http.StatusInternalServerError)
+					return
+				}
+			}
+		} else {
+			// Если это личный чат, добавляем одного пользователя
+			userIDToAdd, err := strconv.Atoi(r.FormValue("user_id"))
+			if err != nil {
+				http.Error(w, "Ошибка получения ID пользователя", http.StatusBadRequest)
+				return
+			}
+			_, err = db.Exec("INSERT INTO chat_users (chat_id, user_id) VALUES ($1, $2)", chatID, userIDToAdd)
+			if err != nil {
+				http.Error(w, "Ошибка добавления пользователя в чат", http.StatusInternalServerError)
+				return
+			}
+		}
+
+		// Перенаправляем пользователя на страницу со списком чатов
 		http.Redirect(w, r, "/chats", http.StatusSeeOther)
 		return
 	}
 
-	tmpl := template.Must(template.ParseFiles("templates/create_chat.html"))
-	tmpl.Execute(w, nil)
-}
+	// Получаем всех пользователей для выбора
+	rows, err := db.Query("SELECT id, username FROM users")
+	if err != nil {
+		http.Error(w, "Ошибка получения пользователей", http.StatusInternalServerError)
+		return
+	}
+	defer rows.Close()
 
+	var users []User
+	for rows.Next() {
+		var user User
+		if err := rows.Scan(&user.ID, &user.Username); err != nil {
+			http.Error(w, "Ошибка получения данных", http.StatusInternalServerError)
+			return
+		}
+		users = append(users, user)
+	}
+
+	tmpl := template.Must(template.ParseFiles("templates/create_chat.html"))
+	tmpl.Execute(w, struct {
+		Users []User
+	}{Users: users})
+}
 func chatHandler(w http.ResponseWriter, r *http.Request) {
 	if !isAuthenticated(r) {
 		http.Redirect(w, r, "/login", http.StatusSeeOther)
@@ -372,39 +398,91 @@ func chatHandler(w http.ResponseWriter, r *http.Request) {
 		messages = append(messages, message)
 	}
 
+	// Получаем участников чата
+	// Получаем участников чата
+	participantRows, err := db.Query("SELECT u.id, u.username FROM chat_users cu JOIN users u ON cu.user_id = u.id WHERE cu.chat_id = $1", chat.ID)
+	if err != nil {
+		http.Error(w, "Ошибка получения участников чата", http.StatusInternalServerError)
+		return
+	}
+	defer participantRows.Close()
+
+	var participants []User
+	for participantRows.Next() {
+		var participant User
+		if err := participantRows.Scan(&participant.ID, &participant.Username); err != nil {
+			http.Error(w, "Ошибка получения данных участников", http.StatusInternalServerError)
+			return
+		}
+		participants = append(participants, participant)
+	}
+
 	tmpl := template.Must(template.ParseFiles("templates/chat.html"))
 	session, _ := store.Get(r, "session-name")
 	username := session.Values["username"].(string)
 	tmpl.Execute(w, struct {
-		Chat     Chat
-		Messages []Message
-		Username string
-	}{Chat: chat, Messages: messages, Username: username})
+		Chat         Chat
+		Messages     []Message
+		Participants []User
+		Username     string
+	}{Chat: chat, Messages: messages, Participants: participants, Username: username})
 }
 
 func sendMessageHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method == http.MethodPost {
-		chatID := r.FormValue("chat_id")
-		session, _ := store.Get(r, "session-name")
-		username := session.Values["username"].(string)
+	// Этот обработчик больше не нужен, так как мы используем WebSocket
+	http.Error(w, "Метод не разрешен", http.StatusMethodNotAllowed)
+}
 
-		var userID int
-		err := db.QueryRow("SELECT id FROM users WHERE username = $1", username).Scan(&userID)
-		if err != nil {
-			http.Error(w, "Ошибка получения пользователя", http.StatusInternalServerError)
-			return
-		}
-
-		content := r.FormValue("content")
-		_, err = db.Exec("INSERT INTO messages (chat_id, user_id, content) VALUES ($1, $2, $3)", chatID, userID, content)
-		if err != nil {
-			http.Error(w, "Ошибка отправки сообщения", http.StatusInternalServerError)
-			return
-		}
-
-		http.Redirect(w, r, fmt.Sprintf("/chat/%s", chatID), http.StatusSeeOther)
+func wsChatHandler(w http.ResponseWriter, r *http.Request) {
+	chatID := mux.Vars(r)["id"]
+	conn, err := upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		log.Println("Ошибка при подключении WebSocket:", err)
 		return
 	}
+	defer conn.Close()
+
+	clients[conn] = true
+	defer delete(clients, conn)
+
+	session, _ := store.Get(r, "session-name")
+	username := session.Values["username"].(string)
+
+	var userID int
+	err = db.QueryRow("SELECT id FROM users WHERE username = $1", username).Scan(&userID)
+	if err != nil {
+		log.Println("Ошибка получения ID пользователя:", err)
+		return
+	}
+
+	for {
+		var msg Message
+		err := conn.ReadJSON(&msg)
+		if err != nil {
+			log.Println("Ошибка чтения сообщения:", err)
+			break
+		}
+		msg.ChatID, _ = strconv.Atoi(chatID) // Установите ID чата
+		msg.UserID = userID                  // Установите ID пользователя
+		msg.Username = username              // Установите имя пользователя
+
+		// Сохраняем сообщение в базе данных
+		_, err = db.Exec("INSERT INTO messages (chat_id, user_id, content) VALUES ($1, $2, $3)", msg.ChatID, msg.UserID, msg.Content)
+		if err != nil {
+			log.Println("Ошибка сохранения сообщения:", err)
+			break
+		}
+
+		// Отправляем сообщение всем подключенным клиентам
+		for client := range clients {
+			if err := client.WriteJSON(msg); err != nil {
+				log.Println("Ошибка отправки сообщения:", err)
+				client.Close()
+				delete(clients, client)
+			}
+		}
+	}
+
 }
 
 func addUserToChatHandler(w http.ResponseWriter, r *http.Request) {
@@ -442,8 +520,8 @@ func addUserHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	chatIDStr := mux.Vars(r)["id"]         // Get chat ID as a string
-	chatID, err := strconv.Atoi(chatIDStr) // Convert to int
+	chatIDStr := mux.Vars(r)["id"]         // Получаем ID чата как строку
+	chatID, err := strconv.Atoi(chatIDStr) // Преобразуем в int
 	if err != nil {
 		http.Error(w, "Неверный идентификатор чата", http.StatusBadRequest)
 		return
@@ -471,7 +549,7 @@ func addUserHandler(w http.ResponseWriter, r *http.Request) {
 	tmpl.Execute(w, struct {
 		ChatID int
 		Users  []User
-	}{ChatID: chatID, Users: users}) // Pass chatID as int
+	}{ChatID: chatID, Users: users}) // Передаем chatID как int
 }
 
 func main() {
@@ -491,9 +569,9 @@ func main() {
 	r.HandleFunc("/chats", chatsHandler).Methods("GET")
 	r.HandleFunc("/create_chat", createChatHandler).Methods("GET", "POST")
 	r.HandleFunc("/chat/{id:[0-9]+}", chatHandler).Methods("GET")
-	r.HandleFunc("/chat/{id:[0-9]+}/send", sendMessageHandler).Methods("POST")
 	r.HandleFunc("/chat/{id:[0-9]+}/add_user", addUserHandler).Methods("GET")
 	r.HandleFunc("/chat/{id:[0-9]+}/add_user", addUserToChatHandler).Methods("POST")
+	r.HandleFunc("/ws/chat/{id:[0-9]+}", wsChatHandler) // Обработчик WebSocket
 	r.HandleFunc("/logout", logoutHandler).Methods("POST")
 
 	http.Handle("/", r)

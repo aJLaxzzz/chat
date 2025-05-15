@@ -1,20 +1,41 @@
 <!DOCTYPE html>
-<html>
+<html lang="ru">
 <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Создать чат</title>
 </head>
 <body>
-    <h1>Создать новый чат</h1>
-    <form method="post">
+    <h1>Создать чат</h1>
+    <form action="/create_chat" method="POST">
         <label for="chat_name">Название чата:</label>
         <input type="text" id="chat_name" name="chat_name" required>
         <br>
         <label for="is_private">Личный чат:</label>
         <input type="checkbox" id="is_private" name="is_private">
         <br>
+        <div id="user_selection" style="display: none;">
+            <label for="user_id">Выберите пользователя:</label>
+            <select id="user_id" name="user_id">
+                {{ range .Users }}
+                    <option value="{{ .ID }}">{{ .Username }}</option>
+                {{ end }}
+            </select>
+        </div>
         <button type="submit">Создать чат</button>
     </form>
-    <a href="/chats">Назад к чатам</a>
-    
+
+    <script>
+        const isPrivateCheckbox = document.getElementById('is_private');
+        const userSelection = document.getElementById('user_selection');
+
+        isPrivateCheckbox.addEventListener('change', function() {
+            if (this.checked) {
+                userSelection.style.display = 'block';
+            } else {
+                userSelection.style.display = 'none';
+            }
+        });
+    </script>
 </body>
 </html>

@@ -1,19 +1,19 @@
 <!DOCTYPE html>
-<html>
+<html lang="ru">
 <head>
-    <title>Авторизация</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Вход</title>
 </head>
 <body>
-    <h1>Авторизация</h1>
-    <form method="post">
+    <h1>Вход</h1>
+    <form method="POST">
         <label for="username">Имя пользователя:</label>
-        <input type="text" id="username" name="username" required>
-        <br>
+        <input type="text" name="username" required><br>
         <label for="password">Пароль:</label>
-        <input type="password" id="password" name="password" required>
-        <br>
+        <input type="password" name="password" required><br>
         <button type="submit">Войти</button>
     </form>
-    <a href="/register">Нет аккаунта? Зарегистрироваться</a>
+    <p>Нет аккаунта? <a href="/register">Зарегистрироваться</a></p>
 </body>
 </html>
