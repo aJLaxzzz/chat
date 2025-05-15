@@ -2,9 +2,11 @@ package main
 
 import (
 	"database/sql"
+	"fmt"
 	"html/template"
 	"log"
 	"net/http"
+	"time"
 
 	"github.com/gorilla/mux"
 	"github.com/gorilla/sessions"
@@ -20,7 +22,8 @@ type User struct {
 	Surname    string
 	Patronymic string
 	Password   string
-	Status     string // Добавлено поле для статуса
+	Status     string
+	LastActive time.Time // Поле для времени последней активности
 }
 
 var db *sql.DB
@@ -42,7 +45,8 @@ func createTable() {
         surname TEXT NOT NULL,
         patronymic TEXT NOT NULL,
         password TEXT NOT NULL,
-        status TEXT NOT NULL DEFAULT 'offline' 
+        status TEXT NOT NULL DEFAULT 'offline',
+        last_active TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );`
 	_, err = db.Exec(query)
 	if err != nil {
@@ -83,6 +87,25 @@ func isAuthenticated(r *http.Request) bool {
 	_, ok := session.Values["username"].(string)
 	return ok
 }
+
+func timeAgo(t time.Time) string {
+	duration := time.Since(t)
+
+	switch {
+	case duration < time.Minute:
+		return "только что"
+	case duration < time.Hour:
+		minutes := int(duration.Minutes())
+		return fmt.Sprintf("%d минут назад", minutes)
+	case duration < 24*time.Hour:
+		hours := int(duration.Hours())
+		return fmt.Sprintf("%d часов назад", hours)
+	default:
+		days := int(duration.Hours() / 24)
+		return fmt.Sprintf("%d дней назад", days)
+	}
+}
+
 func registerHandler(w http.ResponseWriter, r *http.Request) {
 	if isAuthenticated(r) {
 		http.Redirect(w, r, "/users", http.StatusSeeOther)
@@ -108,8 +131,9 @@ func registerHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		// Обновляем время последней активности пользователя
 		// Обновляем статус пользователя на online
-		_, err = db.Exec("UPDATE users SET status = 'online' WHERE username = $1", username)
+		_, err = db.Exec("UPDATE users SET status = 'online', last_active = CURRENT_TIMESTAMP WHERE username = $1", username)
 		if err != nil {
 			http.Error(w, "Ошибка обновления статуса", http.StatusInternalServerError)
 			return
@@ -154,8 +178,8 @@ func loginHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		// Обновляем статус пользователя на online
-		_, err = db.Exec("UPDATE users SET status = 'online' WHERE username = $1", username)
+		// Обновляем время последней активности пользователя
+		_, err = db.Exec("UPDATE users SET status = 'online', last_active = CURRENT_TIMESTAMP WHERE username = $1", username)
 		if err != nil {
 			http.Error(w, "Ошибка обновления статуса", http.StatusInternalServerError)
 			return
@@ -179,6 +203,12 @@ func loginHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func logoutHandler(w http.ResponseWriter, r *http.Request) {
+	// Обработка только POST-запросов
+	if r.Method != http.MethodPost && r.Method != http.MethodGet {
+		http.Error(w, "Метод не разрешен", http.StatusMethodNotAllowed)
+		return
+	}
+
 	session, _ := store.Get(r, "session-name")
 	username, ok := session.Values["username"].(string)
 
@@ -198,7 +228,10 @@ func logoutHandler(w http.ResponseWriter, r *http.Request) {
 	delete(session.Values, "username")
 	session.Save(r, w)
 
-	http.Redirect(w, r, "/login", http.StatusSeeOther)
+	// Если это POST-запрос, перенаправляем на страницу логина
+	if r.Method == http.MethodPost {
+		http.Redirect(w, r, "/login", http.StatusSeeOther)
+	}
 }
 
 func usersHandler(w http.ResponseWriter, r *http.Request) {
@@ -211,7 +244,7 @@ func usersHandler(w http.ResponseWriter, r *http.Request) {
 	session, _ := store.Get(r, "session-name")
 	username := session.Values["username"].(string)
 
-	rows, err := db.Query("SELECT id, username, name, surname, patronymic, status FROM users")
+	rows, err := db.Query("SELECT id, username, name, surname, patronymic, status, last_active FROM users")
 	if err != nil {
 		http.Error(w, "Ошибка получения пользователей", http.StatusInternalServerError)
 		return
@@ -221,7 +254,7 @@ func usersHandler(w http.ResponseWriter, r *http.Request) {
 	var users []User
 	for rows.Next() {
 		var user User
-		if err := rows.Scan(&user.ID, &user.Username, &user.Name, &user.Surname, &user.Patronymic, &user.Status); err != nil {
+		if err := rows.Scan(&user.ID, &user.Username, &user.Name, &user.Surname, &user.Patronymic, &user.Status, &user.LastActive); err != nil {
 			http.Error(w, "Ошибка получения данных", http.StatusInternalServerError)
 			return
 		}
@@ -249,7 +282,8 @@ func main() {
 	r := mux.NewRouter()
 	r.HandleFunc("/", loginHandler).Methods("GET", "POST") // Обработчик для корневого URL
 	r.HandleFunc("/register", registerHandler).Methods("GET", "POST")
-	r.HandleFunc("/login", loginHandler).Methods("GET", "POST") // Обработчик для логина
+	r.HandleFunc("/login", loginHandler).Methods("GET",
+		"POST") // Обработчик для логина
 	r.HandleFunc("/users", usersHandler).Methods("GET")
 	r.HandleFunc("/logout", logoutHandler).Methods("POST") // Обработчик выхода
 
