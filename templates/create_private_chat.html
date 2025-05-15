@@ -1,21 +1,20 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
-    <meta charset="UTF-8" />
+    <meta charset="UTF-8">
     <title>Создать личный чат</title>
 </head>
 <body>
     <h1>Создать личный чат</h1>
-    <form action="/create_private_chat" method="post">
+    <form method="POST">
         <label for="user_id">Выберите пользователя:</label>
         <select id="user_id" name="user_id" required>
             {{range .Users}}
-            <option value="{{.ID}}">{{.Username}}</option>
+                <option value="{{.ID}}">{{.Username}}</option>
             {{end}}
         </select>
-        <br/><br/>
-        <button type="submit">Создать личный чат</button>
+        <br>
+        <button type="submit">Создать чат</button>
     </form>
-    <p><a href="/chats">Вернуться к списку чатов</a></p>
 </body>
 </html>

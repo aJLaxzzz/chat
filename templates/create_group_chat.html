@@ -1,24 +1,22 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
-    <meta charset="UTF-8" />
+    <meta charset="UTF-8">
     <title>Создать групповой чат</title>
 </head>
 <body>
     <h1>Создать групповой чат</h1>
-    <form action="/create_group_chat" method="post">
-        <label for="chat_name">Имя группового чата:</label>
-        <input type="text" id="chat_name" name="chat_name" required />
-        <br/><br/>
-
-        <label>Выберите пользователей:</label><br/>
+    <form method="POST">
+        <label for="chat_name">Название чата:</label>
+        <input type="text" id="chat_name" name="chat_name" required>
+        <br>
+        <label>Выберите пользователей:</label>
+        <br>
         {{range .Users}}
-        <input type="checkbox" name="user_ids" value="{{.ID}}" id="user{{.ID}}" />
-        <label for="user{{.ID}}">{{.Username}}</label><br/>
+            <input type="checkbox" name="user_ids" value="{{.ID}}">{{.Username}}<br>
         {{end}}
-        <br/>
-        <button type="submit">Создать групповой чат</button>
+        <br>
+        <button type="submit">Создать чат</button>
     </form>
-    <p><a href="/chats">Вернуться к списку чатов</a></p>
 </body>
 </html>

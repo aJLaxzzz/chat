@@ -566,6 +566,181 @@ func addUserHandler(w http.ResponseWriter, r *http.Request) {
 	}{ChatID: chatID, Users: users}) // Передаем chatID как int
 }
 
+func createPrivateChatHandler(w http.ResponseWriter, r *http.Request) {
+	if !isAuthenticated(r) {
+		http.Redirect(w, r, "/login", http.StatusSeeOther)
+		return
+	}
+
+	session, _ := store.Get(r, "session-name")
+	username := session.Values["username"].(string) // Получаем имя пользователя из сессии
+
+	if r.Method == http.MethodPost {
+		var userID int
+		err := db.QueryRow("SELECT id FROM users WHERE username = $1", username).Scan(&userID)
+		if err != nil {
+			http.Error(w, "Ошибка получения пользователя", http.StatusInternalServerError)
+			return
+		}
+
+		userIDToAdd, err := strconv.Atoi(r.FormValue("user_id"))
+		if err != nil {
+			http.Error(w, "Ошибка получения ID пользователя", http.StatusBadRequest)
+			return
+		}
+
+		// Проверяем, существует ли уже чат между этими пользователями
+		var existingChatID int
+		err = db.QueryRow(`
+			SELECT c.id FROM chats c
+			JOIN chat_users cu1 ON c.id = cu1.chat_id
+			JOIN chat_users cu2 ON c.id = cu2.chat_id
+			WHERE cu1.user_id = $1 AND cu2.user_id = $2 AND c.is_private = true
+		`, userID, userIDToAdd).Scan(&existingChatID)
+
+		if err == nil {
+			// Чат уже существует
+			http.Error(w, "Личный чат с этим пользователем уже существует", http.StatusConflict)
+			return
+		} else if err != sql.ErrNoRows {
+			// Ошибка при выполнении запроса
+			http.Error(w, "Ошибка проверки существующих чатов", http.StatusInternalServerError)
+			return
+		}
+
+		// Получаем ФИО второго пользователя
+		var name, surname string
+		err = db.QueryRow("SELECT name, surname FROM users WHERE id = $1", userIDToAdd).Scan(&name, &surname)
+		if err != nil {
+			http.Error(w, "Ошибка получения данных собеседника", http.StatusInternalServerError)
+			return
+		}
+
+		// Название чата будет ФИО собеседника
+		chatName := fmt.Sprintf("%s %s", name, surname)
+
+		// Создаем новый личный чат
+		var chatID int
+		err = db.QueryRow("INSERT INTO chats (name, is_private, creator_id) VALUES ($1, $2, $3) RETURNING id", chatName, true, userID).Scan(&chatID)
+		if err != nil {
+			http.Error(w, "Ошибка создания чата", http.StatusInternalServerError)
+			return
+		}
+
+		// Добавляем создателя и другого пользователя в таблицу chat_users
+		_, err = db.Exec("INSERT INTO chat_users (chat_id, user_id) VALUES ($1, $2), ($1, $3)", chatID, userID, userIDToAdd)
+		if err != nil {
+			http.Error(w, "Ошибка добавления пользователей в чат", http.StatusInternalServerError)
+			return
+		}
+
+		http.Redirect(w, r, "/chats", http.StatusSeeOther)
+		return
+	}
+
+	// Получаем всех пользователей для выбора, исключая текущего пользователя
+	rows, err := db.Query("SELECT id, username FROM users WHERE id != (SELECT id FROM users WHERE username = $1)", username)
+	if err != nil {
+		http.Error(w, "Ошибка получения пользователей", http.StatusInternalServerError)
+		return
+	}
+	defer rows.Close()
+
+	var users []User
+	for rows.Next() {
+		var user User
+		if err := rows.Scan(&user.ID, &user.Username); err != nil {
+			http.Error(w, "Ошибка получения данных", http.StatusInternalServerError)
+			return
+		}
+		users = append(users, user)
+	}
+
+	tmpl := template.Must(template.ParseFiles("templates/create_private_chat.html"))
+	tmpl.Execute(w, struct {
+		Users []User
+	}{Users: users})
+}
+
+func createGroupChatHandler(w http.ResponseWriter, r *http.Request) {
+	if !isAuthenticated(r) {
+		http.Redirect(w, r, "/login", http.StatusSeeOther)
+		return
+	}
+
+	session, _ := store.Get(r, "session-name")
+	username := session.Values["username"].(string)
+
+	var currentUserID int
+	err := db.QueryRow("SELECT id FROM users WHERE username = $1", username).Scan(&currentUserID)
+	if err != nil {
+		http.Error(w, "Ошибка получения пользователя", http.StatusInternalServerError)
+		return
+	}
+
+	if r.Method == http.MethodPost {
+		chatName := r.FormValue("chat_name")
+		isPrivate := false // Групповой чат не может быть личным
+
+		// Создаем новый групповой чат
+		var chatID int
+		err = db.QueryRow("INSERT INTO chats (name, is_private, creator_id) VALUES ($1, $2, $3) RETURNING id", chatName, isPrivate, currentUserID).Scan(&chatID)
+		if err != nil {
+			http.Error(w, "Ошибка создания чата", http.StatusInternalServerError)
+			return
+		}
+
+		// Добавляем создателя в таблицу chat_users
+		_, err = db.Exec("INSERT INTO chat_users (chat_id, user_id) VALUES ($1, $2)", chatID, currentUserID)
+		if err != nil {
+			http.Error(w, "Ошибка добавления пользователя в чат", http.StatusInternalServerError)
+			return
+		}
+
+		// Если это групповой чат, добавляем всех выбранных пользователей
+		userIDs := r.Form["user_ids"] // Получаем массив ID пользователей
+		for _, userIDToAddStr := range userIDs {
+			userIDToAdd, err := strconv.Atoi(userIDToAddStr)
+			if err != nil {
+				http.Error(w, "Ошибка получения ID пользователя", http.StatusBadRequest)
+				return
+			}
+			_, err = db.Exec("INSERT INTO chat_users (chat_id, user_id) VALUES ($1, $2)", chatID, userIDToAdd)
+			if err != nil {
+				http.Error(w, "Ошибка добавления пользователя в чат", http.StatusInternalServerError)
+				return
+			}
+		}
+
+		// Перенаправляем пользователя на страницу со списком чатов
+		http.Redirect(w, r, "/chats", http.StatusSeeOther)
+		return
+	}
+
+	// Получаем всех пользователей для выбора, исключая текущего пользователя
+	rows, err := db.Query("SELECT id, username FROM users WHERE id != (SELECT id FROM users WHERE username = $1)", username)
+	if err != nil {
+		http.Error(w, "Ошибка получения пользователей", http.StatusInternalServerError)
+		return
+	}
+	defer rows.Close()
+
+	var users []User
+	for rows.Next() {
+		var user User
+		if err := rows.Scan(&user.ID, &user.Username); err != nil {
+			http.Error(w, "Ошибка получения данных", http.StatusInternalServerError)
+			return
+		}
+		users = append(users, user)
+	}
+
+	tmpl := template.Must(template.ParseFiles("templates/create_group_chat.html"))
+	tmpl.Execute(w, struct {
+		Users []User
+	}{Users: users})
+}
+
 func main() {
 	var err error
 	db, err = sql.Open("postgres", "user=admin password=admin dbname=chatdb sslmode=disable")
@@ -587,6 +762,9 @@ func main() {
 	r.HandleFunc("/chat/{id:[0-9]+}/add_user", addUserToChatHandler).Methods("POST")
 	r.HandleFunc("/ws/chat/{id:[0-9]+}", wsChatHandler) // Обработчик WebSocket
 	r.HandleFunc("/logout", logoutHandler).Methods("POST")
+
+	r.HandleFunc("/create_private_chat", createPrivateChatHandler).Methods("GET", "POST")
+	r.HandleFunc("/create_group_chat", createGroupChatHandler).Methods("GET", "POST")
 
 	http.Handle("/", r)
 	log.Println("Сервер запущен на http://localhost:8080")
