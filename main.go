@@ -241,10 +241,17 @@ func chatsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	rows, err := db.Query(`
-				SELECT c.id, c.name, c.is_private 
-				FROM chats c
-				JOIN chat_users cu ON c.id = cu.chat_id
-				WHERE cu.user_id = $1`, userID)
+		SELECT c.id, 
+		       CASE 
+		           WHEN c.is_private THEN 
+		               (SELECT username FROM users WHERE id != $1 AND id IN (SELECT user_id FROM chat_users WHERE chat_id = c.id))
+		           ELSE 
+		               c.name
+		       END AS name,
+		       c.is_private 
+		FROM chats c
+		JOIN chat_users cu ON c.id = cu.chat_id
+		WHERE cu.user_id = $1`, userID)
 	if err != nil {
 		http.Error(w, "Ошибка получения чатов", http.StatusInternalServerError)
 		return
@@ -268,98 +275,6 @@ func chatsHandler(w http.ResponseWriter, r *http.Request) {
 	}{Username: username, Chats: chats})
 }
 
-func createChatHandler(w http.ResponseWriter, r *http.Request) {
-	if !isAuthenticated(r) {
-		http.Redirect(w, r, "/login", http.StatusSeeOther)
-		return
-	}
-
-	if r.Method == http.MethodPost {
-		session, _ := store.Get(r, "session-name")
-		username := session.Values["username"].(string)
-
-		var userID int
-		err := db.QueryRow("SELECT id FROM users WHERE username = $1", username).Scan(&userID)
-		if err != nil {
-			http.Error(w, "Ошибка получения пользователя", http.StatusInternalServerError)
-			return
-		}
-
-		chatName := r.FormValue("chat_name")
-		isPrivate := r.FormValue("is_private") == "on"
-
-		// Создаем новый чат
-		var chatID int
-		err = db.QueryRow("INSERT INTO chats (name, is_private, creator_id) VALUES ($1, $2, $3) RETURNING id", chatName, isPrivate, userID).Scan(&chatID)
-		if err != nil {
-			http.Error(w, "Ошибка создания чата", http.StatusInternalServerError)
-			return
-		}
-
-		// Добавляем создателя в таблицу chat_users
-		_, err = db.Exec("INSERT INTO chat_users (chat_id, user_id) VALUES ($1, $2)", chatID, userID)
-		if err != nil {
-			http.Error(w, "Ошибка добавления пользователя в чат", http.StatusInternalServerError)
-			return
-		}
-
-		// Если это групповой чат, добавляем всех выбранных пользователей
-		if !isPrivate {
-			userIDs := r.Form["user_ids"] // Получаем массив ID пользователей
-			for _, userIDToAddStr := range userIDs {
-				userIDToAdd, err := strconv.Atoi(userIDToAddStr)
-				if err != nil {
-					http.Error(w, "Ошибка получения ID пользователя", http.StatusBadRequest)
-					return
-				}
-				_, err = db.Exec("INSERT INTO chat_users (chat_id, user_id) VALUES ($1, $2)", chatID, userIDToAdd)
-				if err != nil {
-					http.Error(w, "Ошибка добавления пользователя в чат", http.StatusInternalServerError)
-					return
-				}
-			}
-		} else {
-			// Если это личный чат, добавляем одного пользователя
-			userIDToAdd, err := strconv.Atoi(r.FormValue("user_id"))
-			if err != nil {
-				http.Error(w, "Ошибка получения ID пользователя", http.StatusBadRequest)
-				return
-			}
-			_, err = db.Exec("INSERT INTO chat_users (chat_id, user_id) VALUES ($1, $2)", chatID, userIDToAdd)
-			if err != nil {
-				http.Error(w, "Ошибка добавления пользователя в чат", http.StatusInternalServerError)
-				return
-			}
-		}
-
-		// Перенаправляем пользователя на страницу со списком чатов
-		http.Redirect(w, r, "/chats", http.StatusSeeOther)
-		return
-	}
-
-	// Получаем всех пользователей для выбора
-	rows, err := db.Query("SELECT id, username FROM users")
-	if err != nil {
-		http.Error(w, "Ошибка получения пользователей", http.StatusInternalServerError)
-		return
-	}
-	defer rows.Close()
-
-	var users []User
-	for rows.Next() {
-		var user User
-		if err := rows.Scan(&user.ID, &user.Username); err != nil {
-			http.Error(w, "Ошибка получения данных", http.StatusInternalServerError)
-			return
-		}
-		users = append(users, user)
-	}
-
-	tmpl := template.Must(template.ParseFiles("templates/create_chat.html"))
-	tmpl.Execute(w, struct {
-		Users []User
-	}{Users: users})
-}
 func chatHandler(w http.ResponseWriter, r *http.Request) {
 	if !isAuthenticated(r) {
 		http.Redirect(w, r, "/login", http.StatusSeeOther)
@@ -756,7 +671,6 @@ func main() {
 	r.HandleFunc("/register", registerHandler).Methods("GET", "POST")
 	r.HandleFunc("/login", loginHandler).Methods("GET", "POST")
 	r.HandleFunc("/chats", chatsHandler).Methods("GET")
-	r.HandleFunc("/create_chat", createChatHandler).Methods("GET", "POST")
 	r.HandleFunc("/chat/{id:[0-9]+}", chatHandler).Methods("GET")
 	r.HandleFunc("/chat/{id:[0-9]+}/add_user", addUserHandler).Methods("GET")
 	r.HandleFunc("/chat/{id:[0-9]+}/add_user", addUserToChatHandler).Methods("POST")
