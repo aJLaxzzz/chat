@@ -283,6 +283,7 @@ func chatHandler(w http.ResponseWriter, r *http.Request) {
 
 	chatID := mux.Vars(r)["id"]
 
+	// Получаем информацию о чате
 	rows, err := db.Query("SELECT id, name, is_private FROM chats WHERE id = $1", chatID)
 	if err != nil {
 		http.Error(w, "Ошибка получения чата", http.StatusInternalServerError)
@@ -320,7 +321,6 @@ func chatHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Получаем участников чата
-	// Получаем участников чата
 	participantRows, err := db.Query("SELECT u.id, u.username FROM chat_users cu JOIN users u ON cu.user_id = u.id WHERE cu.chat_id = $1", chat.ID)
 	if err != nil {
 		http.Error(w, "Ошибка получения участников чата", http.StatusInternalServerError)
@@ -338,9 +338,28 @@ func chatHandler(w http.ResponseWriter, r *http.Request) {
 		participants = append(participants, participant)
 	}
 
-	tmpl := template.Must(template.ParseFiles("templates/chat.html"))
+	// Получаем текущего пользователя
 	session, _ := store.Get(r, "session-name")
 	username := session.Values["username"].(string)
+
+	var currentUserID int
+	err = db.QueryRow("SELECT id FROM users WHERE username = $1", username).Scan(&currentUserID)
+	if err != nil {
+		http.Error(w, "Ошибка получения текущего пользователя", http.StatusInternalServerError)
+		return
+	}
+
+	// Если чат личный, изменяем название на имя другого участника
+	if chat.IsPrivate {
+		for _, participant := range participants {
+			if participant.ID != currentUserID {
+				chat.Name = participant.Username // Устанавливаем имя другого участника как название чата
+				break
+			}
+		}
+	}
+
+	tmpl := template.Must(template.ParseFiles("templates/chat.html"))
 	tmpl.Execute(w, struct {
 		Chat         Chat
 		Messages     []Message
