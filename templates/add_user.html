@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Добавить пользователя в чат</title>
+</head>
+<body>
+    <h1>Добавить пользователя в чат</h1>
+    <form method="post">
+        <input type="hidden" name="chat_id" value="{{.ChatID}}">
+        <label for="user_id">Выберите пользователя:</label>
+        <select id="user_id" name="user_id" required>
+            {{range .Users}}
+            <option value="{{.ID}}">{{.Username}}</option>
+            {{end}}
+        </select>
+        <button type="submit">Добавить</button>
+    </form>
+    <a href="/chat/{{.ChatID}}">Назад к чату</a>
+    
+</body>
+</html>

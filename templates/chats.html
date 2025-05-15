@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Чаты</title>
+</head>
+<body>
+    <h1>Привет, {{.Username}}!</h1>
+    <h1>Список чатов</h1>
+    <table>
+        <tr>
+            <th>ID</th>
+            <th>Название</th>
+            <th>Тип</th>
+        </tr>
+        {{range .Chats}}
+        <tr>
+            <td>{{.ID}}</td>
+            <td><a href="/chat/{{.ID}}">{{.Name}}</a></td>
+            <td>{{if .IsPrivate}}Личный{{else}}Групповой{{end}}</td>
+        </tr>
+        {{end}}
+    </table>
+    <a href="/create_chat">Создать новый чат</a>
+    <form action="/logout" method="post">
+        <button type="submit">Выйти</button>
+    </form>
+    
+</body>
+</html>

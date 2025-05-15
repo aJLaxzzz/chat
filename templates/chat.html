@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Чат: {{.Chat.Name}}</title>
+</head>
+<body>
+    <h1>Чат: {{.Chat.Name}}</h1>
+    <h2>Сообщения</h2>
+    <div>
+        {{range .Messages}}
+        <div>
+            <strong>{{.CreatedAt.Format "2006-01-02 15:04:05"}} - {{.Username}}:</strong> {{.Content}}
+        </div>
+        {{end}}
+    </div>
+    <form action="/chat/{{.Chat.ID}}/send" method="post">
+        <input type="hidden" name="chat_id" value="{{.Chat.ID}}">
+        <label for="content">Сообщение:</label>
+        <input type="text" id="content" name="content" required>
+        <button type="submit">Отправить</button>
+    </form>
+    <a href="/chats">Назад к чатам</a>
+    <form action="/chat/{{.Chat.ID}}/add_user" method="get">
+        <button type="submit">Добавить пользователя в чат</button>
+    </form>
+    
+</body>
+</html>
