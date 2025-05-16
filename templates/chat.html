@@ -46,6 +46,7 @@
         ws.onmessage = function(event) {
     const msg = JSON.parse(event.data);
     const messagesDiv = document.getElementById('messages');
+    console.log("Received message:", msg);
 
     if (msg.action === "delete") {
         // Удаляем сообщение
