@@ -627,7 +627,25 @@ func editMessageHandler(w http.ResponseWriter, r *http.Request) {
 	// Обновляем сообщение в базе данных
 	_, err := db.Exec("UPDATE messages SET content = $1 WHERE id = $2", newContent, messageID)
 	if err != nil {
-		http.Error(w, "Ошибка редактирования сообщения", http.StatusInternalServerError)
+		http.Error(w, "Ошибка редактирования сообщения: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	log.Println("Editing message with ID:", messageID)
+
+	// Получаем имя пользователя, который редактировал сообщение
+	var username string
+	err = db.QueryRow(`
+		SELECT u.username 
+		FROM messages m 
+		JOIN users u ON m.user_id = u.id 
+		WHERE m.id = $1`, messageID).Scan(&username)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			http.Error(w, "Сообщение не найдено", http.StatusNotFound)
+		} else {
+			http.Error(w, "Ошибка получения имени пользователя: "+err.Error(), http.StatusInternalServerError)
+		}
 		return
 	}
 
@@ -635,9 +653,10 @@ func editMessageHandler(w http.ResponseWriter, r *http.Request) {
 	for client := range clients {
 		if client.ChatID == atoi(chatID) { // Преобразуем chatID в int
 			err := client.Conn.WriteJSON(map[string]interface{}{
-				"action":  "edit",
-				"id":      messageID,
-				"content": newContent,
+				"action":   "edit",
+				"id":       messageID,
+				"content":  newContent,
+				"Username": username, // Добавляем имя пользователя
 			})
 			if err != nil {
 				log.Println("Ошибка отправки уведомления об редактировании:", err)
