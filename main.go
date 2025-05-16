@@ -1,9 +1,14 @@
 package main
 
 import (
+	"crypto/aes"
+	"crypto/cipher"
+	"crypto/rand"
 	"database/sql"
+	"encoding/base64"
 	"fmt"
 	"html/template"
+	"io"
 	"log"
 	"net/http"
 	"strconv"
@@ -114,6 +119,64 @@ func createTable() {
 		log.Fatal(err)
 	}
 
+}
+func generateRandomKey(size int) ([]byte, error) {
+	key := make([]byte, size)
+	_, err := rand.Read(key)
+	if err != nil {
+		return nil, err
+	}
+	return key, nil
+}
+
+func encrypt(plainText string, key []byte) (string, error) {
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return "", err
+	}
+
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return "", err
+	}
+
+	nonce := make([]byte, gcm.NonceSize())
+	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
+		return "", err
+	}
+
+	ciphertext := gcm.Seal(nonce, nonce, []byte(plainText), nil)
+	return base64.StdEncoding.EncodeToString(ciphertext), nil
+}
+
+func decrypt(cipherText string, key []byte) (string, error) {
+	ciphertext, err := base64.StdEncoding.DecodeString(cipherText)
+	if err != nil {
+		return "", err
+	}
+
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return "", err
+	}
+
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return "", err
+	}
+
+	nonceSize := gcm.NonceSize()
+	if len(ciphertext) < nonceSize {
+		return "", err
+	}
+
+	nonce, ciphertext := ciphertext[:nonceSize], ciphertext[nonceSize:]
+	plainText, err := gcm.Open(nil, nonce, ciphertext, nil)
+	if err != nil {
+		return "", err
+	}
+
+	return string(plainText), nil
 }
 
 func isAuthenticated(r *http.Request) bool {
@@ -395,11 +458,14 @@ func wsChatHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Создаем новый клиент и добавляем его в мапу
-	client := &Client{Conn: conn, UserID: userID, ChatID: atoi(chatID)} // Преобразуем chatID в int
+	client := &Client{Conn: conn, UserID: userID, ChatID: atoi(chatID)}
 	clients[client] = true
 	defer delete(clients, client)
 
+	key, err := generateRandomKey(32) // 32 байта для AES-256
+	if err != nil {
+		log.Fatal(err)
+	}
 	for {
 		var msg Message
 		err := conn.ReadJSON(&msg)
@@ -407,22 +473,32 @@ func wsChatHandler(w http.ResponseWriter, r *http.Request) {
 			log.Println("Ошибка чтения сообщения:", err)
 			break
 		}
-		msg.ChatID, _ = strconv.Atoi(chatID) // Установите ID чата
-		msg.UserID = userID                  // Установите ID пользователя
-		msg.Username = username              // Установите имя пользователя
+		msg.ChatID, _ = strconv.Atoi(chatID)
+		msg.UserID = userID
+		msg.Username = username
 
-		// Сохраняем сообщение в базе данных
-		_, err = db.Exec("INSERT INTO messages (chat_id, user_id, content) VALUES ($1, $2, $3)", msg.ChatID, msg.UserID, msg.Content)
+		// Шифруем сообщение перед сохранением
+		encryptedContent, err := encrypt(msg.Content, key)
+		if err != nil {
+			log.Println("Ошибка шифрования сообщения:", err)
+			break
+		}
+
+		_, err = db.Exec("INSERT INTO messages (chat_id, user_id, content) VALUES ($1, $2, $3)", msg.ChatID, msg.UserID, encryptedContent)
 		if err != nil {
 			log.Println("Ошибка сохранения сообщения:", err)
 			break
 		}
 
-		// Отправляем сообщение только участникам текущего чата
-		// Отправляем сообщение только участникам текущего чата
 		for client := range clients {
-			if client.ChatID == msg.ChatID { // Проверяем, что клиент находится в том же чате
-				msg.UserID = userID // Устанавливаем ID пользователя
+			if client.ChatID == msg.ChatID {
+				// Дешифруем сообщение перед отправкой
+				decryptedContent, err := decrypt(encryptedContent, key)
+				if err != nil {
+					log.Println("Ошибка дешифрования сообщения:", err)
+					continue
+				}
+				msg.Content = decryptedContent
 				if err := client.Conn.WriteJSON(msg); err != nil {
 					log.Println("Ошибка отправки сообщения:", err)
 					client.Conn.Close()
@@ -430,7 +506,6 @@ func wsChatHandler(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 		}
-
 	}
 }
 
