@@ -154,6 +154,11 @@ func registerHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Ошибка сохранения сессии", http.StatusInternalServerError)
 			return
 		}
+		_, err = db.Exec("UPDATE users SET status = 'online', last_active = NOW() WHERE username = $1", username)
+		if err != nil {
+			http.Error(w, "Ошибка обновления статуса", http.StatusInternalServerError)
+			return
+		}
 
 		http.Redirect(w, r, "/chats", http.StatusSeeOther)
 		return
@@ -188,6 +193,12 @@ func loginHandler(w http.ResponseWriter, r *http.Request) {
 		err = session.Save(r, w)
 		if err != nil {
 			http.Error(w, "Ошибка сохранения сессии", http.StatusInternalServerError)
+			return
+		}
+
+		_, err = db.Exec("UPDATE users SET status = 'online', last_active = NOW() WHERE username = $1", username)
+		if err != nil {
+			http.Error(w, "Ошибка обновления статуса", http.StatusInternalServerError)
 			return
 		}
 
@@ -329,11 +340,12 @@ func chatHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Получаем участников чата
-	participantRows, err := db.Query(`
-	SELECT u.id, u.username, u.surname, u.name, u.patronymic
-	FROM chat_users cu
-	JOIN users u ON cu.user_id = u.id
-	WHERE cu.chat_id = $1`, chat.ID)
+	participantRows, err := db.Query(
+		`SELECT u.id, u.username, u.surname, u.name, u.patronymic, u.status, u.last_active
+		 FROM chat_users cu
+		 JOIN users u ON cu.user_id = u.id
+		 WHERE cu.chat_id = $1`, chat.ID) // Исправлено
+
 	if err != nil {
 		http.Error(w, "Ошибка получения участников чата", http.StatusInternalServerError)
 		return
@@ -343,7 +355,7 @@ func chatHandler(w http.ResponseWriter, r *http.Request) {
 	var participants []User
 	for participantRows.Next() {
 		var participant User
-		if err := participantRows.Scan(&participant.ID, &participant.Username, &participant.Surname, &participant.Name, &participant.Patronymic); err != nil {
+		if err := participantRows.Scan(&participant.ID, &participant.Username, &participant.Surname, &participant.Name, &participant.Patronymic, &participant.Status, &participant.LastActive); err != nil {
 			http.Error(w, "Ошибка получения данных участников", http.StatusInternalServerError)
 			return
 		}

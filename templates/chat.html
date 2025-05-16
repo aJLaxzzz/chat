@@ -1,141 +1,145 @@
 <!DOCTYPE html>
 <html lang="ru">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Чат: {{ .Chat.Name }}</title>
-    <style>
-        /* Ваши стили */
-    </style>
-</head>
-<body>
-    <h1>Чат: {{ .Chat.Name }}</h1>
-    
-    <div>
-        <h2>Участники чата:</h2>
-        <ul>
-            {{ range .Participants }}
-    <li>{{ .Surname }} {{ .Name }} {{ .Patronymic }}</li>
-{{ end }}
-        </ul>
-    </div>
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<title>Чат: {{ .Chat.Name }}</title>
+		<style>
+			/* Ваши стили */
+		</style>
+	</head>
+	<body>
+		<h1>Чат: {{ .Chat.Name }}</h1>
 
-    <div id="messages">
-        {{ range .Messages }}
-    <div class="message" data-id="{{ .ID }}">
-        <strong>{{ .Username }}:</strong> {{ .Content }}
-        {{ if eq .UserID $.CurrentUserID }} <!-- Проверка на авторство -->
-            <button class="edit" onclick="editMessage({{ .ID }}, '{{ .Content | js }}')">Редактировать</button>
-            <button class="delete" onclick="deleteMessage({{ .ID }})">Удалить</button>
-        {{ end }}
-    </div>
-{{ end }}
+		<div>
+			<h2>Участники чата:</h2>
+			<ul>
+				{{ range .Participants }}
+				<li>
+					{{ .Surname }} {{ .Name }} {{ .Patronymic }} - {{ if eq .Status "online" }}
+					<span>Онлайн</span>
+					{{ else }}
+					<span>Последний раз в сети: {{ .LastActive.Format "02.01.2006 15:04" }}</span>
+					{{ end }}
+				</li>
+				{{ end }}
+			</ul>
+		</div>
 
-    </div>
-    
-    <input type="text" id="message" placeholder="Введите сообщение..." autocomplete="off">
-    <button id="send">Отправить</button>
-    <form action="/chats" method="get">
-        <button type="submit">← Назад к чатам</button>
-    </form>
+		<div id="messages">
+			{{ range .Messages }}
+			<div class="message" data-id="{{ .ID }}">
+				<strong>{{ .Username }}:</strong> {{ .Content }} {{ if eq .UserID $.CurrentUserID }}
+				<!-- Проверка на авторство -->
+				<button class="edit" onclick="editMessage({{ .ID }}, '{{ .Content | js }}')">Редактировать</button>
+				<button class="delete" onclick="deleteMessage({{ .ID }})">Удалить</button>
+				{{ end }}
+			</div>
+			{{ end }}
+		</div>
 
-    <script>
-        const chatID = {{ .Chat.ID }};
-        const ws = new WebSocket(`ws://${window.location.host}/ws/chat/${chatID}`);
+		<input type="text" id="message" placeholder="Введите сообщение..." autocomplete="off" />
+		<button id="send">Отправить</button>
+		<form action="/chats" method="get">
+			<button type="submit">← Назад к чатам</button>
+		</form>
 
-        ws.onmessage = function(event) {
-    const msg = JSON.parse(event.data);
-    const messagesDiv = document.getElementById('messages');
-    console.log("Received message:", msg);
+		<script>
+			        const chatID = {{ .Chat.ID }};
+			        const ws = new WebSocket(`ws://${window.location.host}/ws/chat/${chatID}`);
 
-    if (msg.action === "delete") {
-        // Удаляем сообщение
-        const messageDiv = document.querySelector(`.message[data-id='${msg.id}']`);
-        if (messageDiv) {
-            messageDiv.remove();
-        }
-    } else if (msg.action === "edit") {
-        // Обновляем сообщение
-        const messageDiv = document.querySelector(`.message[data-id='${msg.id}']`);
-        if (messageDiv) {
-            messageDiv.innerHTML = `<strong>${msg.Username}:</strong> ${msg.content} ${msg.UserID === {{ .CurrentUserID }} ? `<button class="edit" onclick="editMessage(${msg.id}, '${msg.content}')">Редактировать</button> <button class="delete" onclick="deleteMessage(${msg.id})">Удалить</button>` : ''}`;
-        }
-    } else {
-        // Обработка обычного сообщения
-        const isCurrentUser = msg.UserID === {{ .CurrentUserID }}; // Проверяем, является ли сообщение от текущего пользователя
-        const buttons = isCurrentUser ? `<button class="edit" onclick="editMessage(${msg.ID}, '${msg.Content}')">Редактировать</button> <button class="delete" onclick="deleteMessage(${msg.ID})">Удалить</button>` : '';
-        messagesDiv.innerHTML += `<div class="message" data-id="${msg.ID}"><strong>${msg.Username}:</strong> ${msg.Content} ${buttons}</div>`;
-        messagesDiv.scrollTop = messagesDiv.scrollHeight; // Прокрутка вниз
-    }
-};
+			        ws.onmessage = function(event) {
+			    const msg = JSON.parse(event.data);
+			    const messagesDiv = document.getElementById('messages');
 
-
-function editMessage(messageID, currentContent) {
-    const newContent = prompt("Редактировать сообщение:", currentContent);
-    if (newContent !== null) {
-        fetch('/edit-message', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/x-www-form-urlencoded',
-            },
-            body: `message_id=${messageID}&content=${encodeURIComponent(newContent)}&chat_id=${chatID}` // Передаем chatID
-        }).then(response => {
-            if (response.ok) {
-                // Обновите сообщение на странице
-                const messageDiv = document.querySelector(`.message[data-id='${messageID}']`);
-                const username = messageDiv.querySelector('strong').innerText.replace(/:$/, '');
-                messageDiv.innerHTML = `<strong>${username}:</strong> ${newContent} <button class="edit" onclick="editMessage(${messageID}, '${newContent}')">Редактировать</button> <button class="delete" onclick="deleteMessage(${messageID})">Удалить</button>`;
-            } else {
-                alert("Ошибка редактирования сообщения");
-            }
-        });
-    }
-}
-
-function deleteMessage(messageID) {
-    if (confirm("Вы уверены, что хотите удалить это сообщение?")) {
-        fetch('/delete-message', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/x-www-form-urlencoded',
-            },
-            body: `message_id=${messageID}&chat_id=${chatID}` // Передаем chatID
-        }).then(response => {
-            if (response.ok) {
-                // Удалите сообщение из DOM
-                const messageDiv = document.querySelector(`.message[data-id='${messageID}']`);
-                if (messageDiv) {
-                    messageDiv.remove();
-                }
-            } else {
-                alert("Ошибка удаления сообщения");
-            }
-        });
-    }
-}
+			    if (msg.action === "delete") {
+			        // Удаляем сообщение
+			        const messageDiv = document.querySelector(`.message[data-id='${msg.id}']`);
+			        if (messageDiv) {
+			            messageDiv.remove();
+			        }
+			    } else if (msg.action === "edit") {
+			        // Обновляем сообщение
+			        const messageDiv = document.querySelector(`.message[data-id='${msg.id}']`);
+			        if (messageDiv) {
+			            messageDiv.innerHTML = `<strong>${msg.Username}:</strong> ${msg.content} ${msg.UserID === {{ .CurrentUserID }} ? `<button class="edit" onclick="editMessage(${msg.id}, '${msg.content}')">Редактировать</button> <button class="delete" onclick="deleteMessage(${msg.id})">Удалить</button>` : ''}`;
+			        }
+			    } else {
+			        // Обработка обычного сообщения
+			        const isCurrentUser = msg.UserID === {{ .CurrentUserID }}; // Проверяем, является ли сообщение от текущего пользователя
+			        const buttons = isCurrentUser ? `<button class="edit" onclick="editMessage(${msg.ID}, '${msg.Content}')">Редактировать</button> <button class="delete" onclick="deleteMessage(${msg.ID})">Удалить</button>` : '';
+			        messagesDiv.innerHTML += `<div class="message" data-id="${msg.ID}"><strong>${msg.Username}:</strong> ${msg.Content} ${buttons}</div>`;
+			        messagesDiv.scrollTop = messagesDiv.scrollHeight; // Прокрутка вниз
+			    }
+			};
 
 
+			function editMessage(messageID, currentContent) {
+			    console.log("Редактирование сообщения, ID:", messageID); // ← добавили сюда
+			    const newContent = prompt("Редактировать сообщение:", currentContent);
+			    if (newContent !== null) {
+			        fetch('/edit-message', {
+			            method: 'POST',
+			            headers: {
+			                'Content-Type': 'application/x-www-form-urlencoded',
+			            },
+			            body: `message_id=${messageID}&content=${encodeURIComponent(newContent)}&chat_id=${chatID}`
+			        }).then(response => {
+			            if (response.ok) {
+			                const messageDiv = document.querySelector(`.message[data-id='${messageID}']`);
+			                const username = messageDiv.querySelector('strong').innerText.replace(/:$/, '');
+			                messageDiv.innerHTML = `<strong>${username}:</strong> ${newContent} <button class="edit" onclick="editMessage(${messageID}, '${newContent}')">Редактировать</button> <button class="delete" onclick="deleteMessage(${messageID})">Удалить</button>`;
+			            } else {
+			                alert("Ошибка редактирования сообщения");
+			            }
+			        });
+			    }
+			}
+
+
+			function deleteMessage(messageID) {
+			    console.log("Удаление сообщения, ID:", messageID); // ← добавили сюда
+			    if (confirm("Вы уверены, что хотите удалить это сообщение?")) {
+			        fetch('/delete-message', {
+			            method: 'POST',
+			            headers: {
+			                'Content-Type': 'application/x-www-form-urlencoded',
+			            },
+			            body: `message_id=${messageID}&chat_id=${chatID}`
+			        }).then(response => {
+			            if (response.ok) {
+			                const messageDiv = document.querySelector(`.message[data-id='${messageID}']`);
+			                if (messageDiv) {
+			                    messageDiv.remove();
+			                }
+			            } else {
+			                alert("Ошибка удаления сообщения");
+			            }
+			        });
+			    }
+			}
 
 
 
 
-        document.getElementById('send').onclick = function() {
-            const messageInput = document.getElementById('message');
-            const message = messageInput.value;
-            if (message.trim() !== "") {
-                ws.send(JSON.stringify({ Content: message }));
-                messageInput.value = ''; // Очистка поля ввода
-            }
-        };
 
-        // Отправка сообщения по нажатию клавиши Enter
-        document.getElementById('message').addEventListener('keypress', function(event) {
-            if (event.key === 'Enter') {
-                document.getElementById('send').click();
-            }
-        });
 
-        
-    </script>
-</body>
+
+			        document.getElementById('send').onclick = function() {
+			            const messageInput = document.getElementById('message');
+			            const message = messageInput.value;
+			            if (message.trim() !== "") {
+			                ws.send(JSON.stringify({ Content: message }));
+			                messageInput.value = ''; // Очистка поля ввода
+			            }
+			        };
+
+			        // Отправка сообщения по нажатию клавиши Enter
+			        document.getElementById('message').addEventListener('keypress', function(event) {
+			            if (event.key === 'Enter') {
+			                document.getElementById('send').click();
+			            }
+			        });
+		</script>
+	</body>
 </html>
