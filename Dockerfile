@@ -5,7 +5,7 @@ WORKDIR /app
 COPY . .
 
 RUN go mod download
-RUN CGO_ENABLED=0 GOOS=linux go build -o chat-app .
+RUN CGO_ENABLED=0 GOOS=linux go build -o chat-app ./cmd
 
 # Runtime stage
 FROM alpine:3.19
@@ -13,11 +13,7 @@ FROM alpine:3.19
 WORKDIR /app
 COPY --from=builder /app/chat-app .
 COPY --from=builder /app/templates ./templates
-
-ENV DB_HOST=db
-ENV DB_USER=admin
-ENV DB_PASSWORD=admin
-ENV DB_NAME=chatdb
+COPY --from=builder /app/config.yaml ./config.yaml
 
 EXPOSE 8080
 

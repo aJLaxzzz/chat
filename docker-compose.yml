@@ -10,6 +10,7 @@ services:
       POSTGRES_DB: chatdb
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
     networks:
       - chat-network
     healthcheck:
@@ -22,17 +23,12 @@ services:
     build: .
     container_name: chat-app
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"
     depends_on:
       db:
         condition: service_healthy
     networks:
       - chat-network
-    environment:
-      - DB_HOST=db
-      - DB_USER=admin
-      - DB_PASSWORD=admin
-      - DB_NAME=chatdb
 
 volumes:
   postgres_data:
