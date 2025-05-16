@@ -297,24 +297,27 @@ func chatsHandler(w http.ResponseWriter, r *http.Request) {
 	username := session.Values["username"].(string)
 
 	var userID int
-	err := db.QueryRow("SELECT id FROM users WHERE username = $1", username).Scan(&userID)
+	var surname, name, patronymic string
+	err := db.QueryRow("SELECT id, surname, name, patronymic FROM users WHERE username = $1", username).Scan(&userID, &surname, &name, &patronymic)
 	if err != nil {
 		http.Error(w, "Ошибка получения пользователя", http.StatusInternalServerError)
 		return
 	}
 
 	rows, err := db.Query(`
-		SELECT c.id, 
-		       CASE 
-		           WHEN c.is_private THEN 
-		               (SELECT username FROM users WHERE id != $1 AND id IN (SELECT user_id FROM chat_users WHERE chat_id = c.id))
-		           ELSE 
-		               c.name
-		       END AS name,
-		       c.is_private 
-		FROM chats c
-		JOIN chat_users cu ON c.id = cu.chat_id
-		WHERE cu.user_id = $1`, userID)
+	SELECT c.id, 
+	       CASE 
+	           WHEN c.is_private THEN 
+	               (SELECT surname || ' ' || name || ' ' || patronymic 
+	                FROM users 
+	                WHERE id != $1 AND id IN (SELECT user_id FROM chat_users WHERE chat_id = c.id))
+	           ELSE 
+	               c.name
+	       END AS name,
+	       c.is_private 
+	FROM chats c
+	JOIN chat_users cu ON c.id = cu.chat_id
+	WHERE cu.user_id = $1`, userID)
 	if err != nil {
 		http.Error(w, "Ошибка получения чатов", http.StatusInternalServerError)
 		return
@@ -331,11 +334,16 @@ func chatsHandler(w http.ResponseWriter, r *http.Request) {
 		chats = append(chats, chat)
 	}
 
+	fullName := fmt.Sprintf("%s %s %s", surname, name, patronymic)
+
 	tmpl := template.Must(template.ParseFiles("templates/chats.html"))
 	tmpl.Execute(w, struct {
-		Username string
+		FullName string
 		Chats    []Chat
-	}{Username: username, Chats: chats})
+	}{
+		FullName: fullName,
+		Chats:    chats,
+	})
 }
 
 func chatHandler(w http.ResponseWriter, r *http.Request) {
