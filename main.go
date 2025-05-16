@@ -361,11 +361,19 @@ func chatHandler(w http.ResponseWriter, r *http.Request) {
 
 	tmpl := template.Must(template.ParseFiles("templates/chat.html"))
 	tmpl.Execute(w, struct {
-		Chat         Chat
-		Messages     []Message
-		Participants []User
-		Username     string
-	}{Chat: chat, Messages: messages, Participants: participants, Username: username})
+		Chat          Chat
+		Messages      []Message
+		Participants  []User
+		Username      string
+		CurrentUserID int // Добавлено поле для текущего пользователя
+	}{
+		Chat:          chat,
+		Messages:      messages,
+		Participants:  participants,
+		Username:      username,
+		CurrentUserID: currentUserID, // Передаем ID текущего пользователя
+	})
+
 }
 
 func wsChatHandler(w http.ResponseWriter, r *http.Request) {
@@ -411,8 +419,10 @@ func wsChatHandler(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// Отправляем сообщение только участникам текущего чата
+		// Отправляем сообщение только участникам текущего чата
 		for client := range clients {
 			if client.ChatID == msg.ChatID { // Проверяем, что клиент находится в том же чате
+				msg.UserID = userID // Устанавливаем ID пользователя
 				if err := client.Conn.WriteJSON(msg); err != nil {
 					log.Println("Ошибка отправки сообщения:", err)
 					client.Conn.Close()
@@ -420,6 +430,7 @@ func wsChatHandler(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 		}
+
 	}
 }
 
