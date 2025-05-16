@@ -603,6 +603,72 @@ func createGroupChatHandler(w http.ResponseWriter, r *http.Request) {
 	}{Users: users})
 }
 
+func editMessageHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Метод не разрешен", http.StatusMethodNotAllowed)
+		return
+	}
+
+	messageID := r.FormValue("message_id")
+	newContent := r.FormValue("content")
+	chatID := r.FormValue("chat_id") // Получаем chatID из запроса
+
+	// Обновляем сообщение в базе данных
+	_, err := db.Exec("UPDATE messages SET content = $1 WHERE id = $2", newContent, messageID)
+	if err != nil {
+		http.Error(w, "Ошибка редактирования сообщения", http.StatusInternalServerError)
+		return
+	}
+
+	// Отправляем уведомление всем клиентам
+	for client := range clients {
+		if client.ChatID == atoi(chatID) { // Преобразуем chatID в int
+			err := client.Conn.WriteJSON(map[string]interface{}{
+				"action":  "edit",
+				"id":      messageID,
+				"content": newContent,
+			})
+			if err != nil {
+				log.Println("Ошибка отправки уведомления об редактировании:", err)
+				client.Conn.Close()
+				delete(clients, client)
+			}
+		}
+	}
+}
+
+func deleteMessageHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Метод не разрешен", http.StatusMethodNotAllowed)
+		return
+	}
+
+	messageID := r.FormValue("message_id")
+	chatID := r.FormValue("chat_id") // Получаем chatID из запроса
+
+	// Удаляем сообщение из базы данных
+	_, err := db.Exec("DELETE FROM messages WHERE id = $1", messageID)
+	if err != nil {
+		http.Error(w, "Ошибка удаления сообщения", http.StatusInternalServerError)
+		return
+	}
+
+	// Отправляем уведомление всем клиентам
+	for client := range clients {
+		if client.ChatID == atoi(chatID) { // Преобразуем chatID в int
+			err := client.Conn.WriteJSON(map[string]interface{}{
+				"action": "delete",
+				"id":     messageID,
+			})
+			if err != nil {
+				log.Println("Ошибка отправки уведомления об удалении:", err)
+				client.Conn.Close()
+				delete(clients, client)
+			}
+		}
+	}
+}
+
 func main() {
 	var err error
 	db, err = sql.Open("postgres", "user=admin password=admin dbname=chatdb sslmode=disable")
@@ -624,6 +690,9 @@ func main() {
 
 	r.HandleFunc("/create_private_chat", createPrivateChatHandler).Methods("GET", "POST")
 	r.HandleFunc("/create_group_chat", createGroupChatHandler).Methods("GET", "POST")
+
+	r.HandleFunc("/edit-message", editMessageHandler).Methods("POST")
+	r.HandleFunc("/delete-message", deleteMessageHandler).Methods("POST")
 
 	http.Handle("/", r)
 	log.Println("Сервер запущен на http://localhost:8080")
