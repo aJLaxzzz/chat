@@ -392,7 +392,11 @@ func chatHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Получаем участников чата
-	participantRows, err := db.Query("SELECT u.id, u.username FROM chat_users cu JOIN users u ON cu.user_id = u.id WHERE cu.chat_id = $1", chat.ID)
+	participantRows, err := db.Query(`
+	SELECT u.id, u.username, u.surname, u.name, u.patronymic
+	FROM chat_users cu
+	JOIN users u ON cu.user_id = u.id
+	WHERE cu.chat_id = $1`, chat.ID)
 	if err != nil {
 		http.Error(w, "Ошибка получения участников чата", http.StatusInternalServerError)
 		return
@@ -402,7 +406,7 @@ func chatHandler(w http.ResponseWriter, r *http.Request) {
 	var participants []User
 	for participantRows.Next() {
 		var participant User
-		if err := participantRows.Scan(&participant.ID, &participant.Username); err != nil {
+		if err := participantRows.Scan(&participant.ID, &participant.Username, &participant.Surname, &participant.Name, &participant.Patronymic); err != nil {
 			http.Error(w, "Ошибка получения данных участников", http.StatusInternalServerError)
 			return
 		}
@@ -424,7 +428,7 @@ func chatHandler(w http.ResponseWriter, r *http.Request) {
 	if chat.IsPrivate {
 		for _, participant := range participants {
 			if participant.ID != currentUserID {
-				chat.Name = participant.Username // Устанавливаем имя другого участника как название чата
+				chat.Name = participant.Surname + " " + participant.Name + " " + participant.Patronymic
 				break
 			}
 		}

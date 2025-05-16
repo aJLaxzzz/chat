@@ -15,8 +15,8 @@
         <h2>Участники чата:</h2>
         <ul>
             {{ range .Participants }}
-                <li>{{ .Username }}</li>
-            {{ end }}
+    <li>{{ .Surname }} {{ .Name }} {{ .Patronymic }}</li>
+{{ end }}
         </ul>
     </div>
 
