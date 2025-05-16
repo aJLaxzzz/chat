@@ -13,7 +13,7 @@
         <label>Выберите пользователей:</label>
         <br>
         {{range .Users}}
-            <input type="checkbox" name="user_ids" value="{{.ID}}">{{.Username}}<br>
+            <input type="checkbox" name="user_ids" value="{{.ID}}">{{.Surname}} {{.Name}} {{.Patronymic}}<br>
         {{end}}
         <br>
         <button type="submit">Создать чат</button>

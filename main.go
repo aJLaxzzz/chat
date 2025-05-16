@@ -587,7 +587,7 @@ func createPrivateChatHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Получаем всех пользователей для выбора, исключая текущего пользователя
-	rows, err := db.Query("SELECT id, username FROM users WHERE id != (SELECT id FROM users WHERE username = $1)", username)
+	rows, err := db.Query("SELECT id, surname, name, patronymic FROM users WHERE id != (SELECT id FROM users WHERE username = $1)", username)
 	if err != nil {
 		http.Error(w, "Ошибка получения пользователей", http.StatusInternalServerError)
 		return
@@ -597,10 +597,12 @@ func createPrivateChatHandler(w http.ResponseWriter, r *http.Request) {
 	var users []User
 	for rows.Next() {
 		var user User
-		if err := rows.Scan(&user.ID, &user.Username); err != nil {
+		var surname, name, patronymic string
+		if err := rows.Scan(&user.ID, &surname, &name, &patronymic); err != nil {
 			http.Error(w, "Ошибка получения данных", http.StatusInternalServerError)
 			return
 		}
+		user.Name = fmt.Sprintf("%s %s %s", surname, name, patronymic)
 		users = append(users, user)
 	}
 
@@ -666,7 +668,10 @@ func createGroupChatHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Получаем всех пользователей для выбора, исключая текущего пользователя
-	rows, err := db.Query("SELECT id, username FROM users WHERE id != (SELECT id FROM users WHERE username = $1)", username)
+	rows, err := db.Query(`
+	SELECT id, name, surname, patronymic 
+	FROM users 
+	WHERE id != (SELECT id FROM users WHERE username = $1)`, username)
 	if err != nil {
 		http.Error(w, "Ошибка получения пользователей", http.StatusInternalServerError)
 		return
@@ -676,7 +681,7 @@ func createGroupChatHandler(w http.ResponseWriter, r *http.Request) {
 	var users []User
 	for rows.Next() {
 		var user User
-		if err := rows.Scan(&user.ID, &user.Username); err != nil {
+		if err := rows.Scan(&user.ID, &user.Name, &user.Surname, &user.Patronymic); err != nil {
 			http.Error(w, "Ошибка получения данных", http.StatusInternalServerError)
 			return
 		}

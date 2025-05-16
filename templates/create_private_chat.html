@@ -10,9 +10,10 @@
         <label for="user_id">Выберите пользователя:</label>
         <select id="user_id" name="user_id" required>
             {{range .Users}}
-                <option value="{{.ID}}">{{.Username}}</option>
+                <option value="{{.ID}}">{{.Surname}} {{.Name}} {{.Patronymic}}</option>
             {{end}}
         </select>
+        
         <br>
         <button type="submit">Создать чат</button>
     </form>
