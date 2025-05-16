@@ -437,12 +437,14 @@ func wsChatHandler(w http.ResponseWriter, r *http.Request) {
 		// Шифруем сообщение перед сохранением
 		encryptedContent := msg.Content
 
-		_, err = db.Exec("INSERT INTO messages (chat_id, user_id, content) VALUES ($1, $2, $3)", msg.ChatID, msg.UserID, encryptedContent)
+		// Используем RETURNING для получения ID вставленного сообщения
+		err = db.QueryRow("INSERT INTO messages (chat_id, user_id, content) VALUES ($1, $2, $3) RETURNING id", msg.ChatID, msg.UserID, encryptedContent).Scan(&msg.ID)
 		if err != nil {
 			log.Println("Ошибка сохранения сообщения:", err)
 			break
 		}
 
+		// Отправляем сообщение всем клиентам в чате
 		for client := range clients {
 			if client.ChatID == msg.ChatID {
 				// Дешифруем сообщение перед отправкой
@@ -643,7 +645,6 @@ func createGroupChatHandler(w http.ResponseWriter, r *http.Request) {
 		Users []User
 	}{Users: users})
 }
-
 func editMessageHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Метод не разрешен", http.StatusMethodNotAllowed)
@@ -652,41 +653,40 @@ func editMessageHandler(w http.ResponseWriter, r *http.Request) {
 
 	messageID := r.FormValue("message_id")
 	newContent := r.FormValue("content")
-	chatID := r.FormValue("chat_id") // Получаем chatID из запроса
+	chatID := r.FormValue("chat_id")
+
+	// Преобразование messageID в int
+	id, err := strconv.Atoi(messageID)
+	if err != nil {
+		http.Error(w, "Неверный идентификатор сообщения", http.StatusBadRequest)
+		return
+	}
 
 	// Обновляем сообщение в базе данных
-	_, err := db.Exec("UPDATE messages SET content = $1 WHERE id = $2", newContent, messageID)
+	_, err = db.Exec("UPDATE messages SET content = $1 WHERE id = $2", newContent, id)
 	if err != nil {
 		http.Error(w, "Ошибка редактирования сообщения: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	log.Println("Editing message with ID:", messageID)
+	log.Println("Editing message with ID:", id)
 
 	// Получаем имя пользователя, который редактировал сообщение
 	var username string
-	err = db.QueryRow(`
-		SELECT u.username 
-		FROM messages m 
-		JOIN users u ON m.user_id = u.id 
-		WHERE m.id = $1`, messageID).Scan(&username)
+	err = db.QueryRow("SELECT u.username FROM messages m JOIN users u ON m.user_id = u.id WHERE m.id = $1", id).Scan(&username)
 	if err != nil {
-		if err == sql.ErrNoRows {
-			http.Error(w, "Сообщение не найдено", http.StatusNotFound)
-		} else {
-			http.Error(w, "Ошибка получения имени пользователя: "+err.Error(), http.StatusInternalServerError)
-		}
+		http.Error(w, "Ошибка получения имени пользователя: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 
 	// Отправляем уведомление всем клиентам
 	for client := range clients {
-		if client.ChatID == atoi(chatID) { // Преобразуем chatID в int
+		if client.ChatID == atoi(chatID) {
 			err := client.Conn.WriteJSON(map[string]interface{}{
 				"action":   "edit",
-				"id":       messageID,
+				"id":       id,
 				"content":  newContent,
-				"Username": username, // Добавляем имя пользователя
+				"Username": username,
 			})
 			if err != nil {
 				log.Println("Ошибка отправки уведомления об редактировании:", err)
