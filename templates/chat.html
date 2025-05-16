@@ -67,6 +67,52 @@
     }
 };
 
+function editMessage(messageID, currentContent) {
+    const newContent = prompt("Редактировать сообщение:", currentContent);
+    if (newContent !== null) {
+        fetch('/edit-message', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            body: `message_id=${messageID}&content=${encodeURIComponent(newContent)}&chat_id=${chatID}` // Передаем chatID
+        }).then(response => {
+            if (response.ok) {
+                // Обновите сообщение на странице
+                const messageDiv = document.querySelector(`.message[data-id='${messageID}']`);
+                messageDiv.innerHTML = `<strong>${messageDiv.querySelector('strong').innerText}:</strong> ${newContent} <button class="edit" onclick="editMessage(${messageID}, '${newContent}')">Редактировать</button> <button class="delete" onclick="deleteMessage(${messageID})">Удалить</button>`;
+            } else {
+                alert("Ошибка редактирования сообщения");
+            }
+        });
+    }
+}
+
+function deleteMessage(messageID) {
+    if (confirm("Вы уверены, что хотите удалить это сообщение?")) {
+        fetch('/delete-message', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            body: `message_id=${messageID}&chat_id=${chatID}` // Передаем chatID
+        }).then(response => {
+            if (response.ok) {
+                // Удалите сообщение из DOM
+                const messageDiv = document.querySelector(`.message[data-id='${messageID}']`);
+                if (messageDiv) {
+                    messageDiv.remove();
+                }
+            } else {
+                alert("Ошибка удаления сообщения");
+            }
+        });
+    }
+}
+
+
+
+
 
 
         document.getElementById('send').onclick = function() {
@@ -85,49 +131,7 @@
             }
         });
 
-        function editMessage(messageID, currentContent) {
-            const newContent = prompt("Редактировать сообщение:", currentContent);
-            if (newContent !== null) {
-                fetch('/edit-message', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/x-www-form-urlencoded',
-                    },
-                    body: `message_id=${messageID}&content=${encodeURIComponent(newContent)}`
-                }).then(response => {
-                    if (response.ok) {
-                        // Обновите сообщение на странице
-                        const messageDiv = document.querySelector(`.message[data-id='${messageID}']`);
-                        messageDiv.innerHTML = `<strong>${messageDiv.querySelector('strong').innerText}:</strong> ${newContent} <button class="edit" onclick="editMessage(${messageID}, '${newContent}')">Редактировать</button> <button class="delete" onclick="deleteMessage(${messageID})">Удалить</button>`;
-                    } else {
-                        alert("Ошибка редактирования сообщения");
-                    }
-                });
-            }
-        }
-
-        function deleteMessage(messageID) {
-            if (confirm("Вы уверены, что хотите удалить это сообщение?")) {
-                fetch('/delete-message', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/x-www-form-urlencoded',
-                    },
-                    body: `message_id=${messageID}`
-                }).then(response => {
-                    if (response.ok) {
-                        // Удалите сообщение
-                        // Удалите сообщение из DOM
-                        const messageDiv = document.querySelector(`.message[data-id='${messageID}']`);
-                        if (messageDiv) {
-                            messageDiv.remove();
-                        }
-                    } else {
-                        alert("Ошибка удаления сообщения");
-                    }
-                });
-            }
-        }
+        
     </script>
 </body>
 </html>
