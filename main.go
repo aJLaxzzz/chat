@@ -1,7 +1,11 @@
 package main
 
 import (
+	"crypto/aes"
+	"crypto/cipher"
+	"crypto/rand"
 	"database/sql"
+	"encoding/base64"
 	"fmt"
 	"html/template"
 	"log"
@@ -60,6 +64,7 @@ var upgrader = websocket.Upgrader{
 }
 
 var clients = make(map[*Client]bool)
+var key = []byte("thisis32byteslonglongsssssssss!!") // Замените на ваш ключ
 
 func createTable() {
 	// Очищаем таблицы
@@ -114,6 +119,52 @@ func createTable() {
 		log.Fatal(err)
 	}
 
+}
+
+func encrypt(plainText string, key []byte) (string, error) {
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return "", err
+	}
+
+	iv := make([]byte, aes.BlockSize)
+	if _, err := rand.Read(iv); err != nil {
+		return "", err
+	}
+
+	stream := cipher.NewCTR(block, iv)
+
+	cipherText := make([]byte, len(plainText))
+	stream.XORKeyStream(cipherText, []byte(plainText))
+
+	// Вернем IV + ciphertext в base64
+	result := append(iv, cipherText...)
+	return base64.StdEncoding.EncodeToString(result), nil
+}
+
+func decrypt(cipherText string, key []byte) (string, error) {
+	data, err := base64.StdEncoding.DecodeString(cipherText)
+	if err != nil {
+		return "", err
+	}
+	if len(data) < aes.BlockSize {
+		return "", fmt.Errorf("invalid ciphertext")
+	}
+
+	iv := data[:aes.BlockSize]
+	cipherData := data[aes.BlockSize:]
+
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return "", err
+	}
+
+	stream := cipher.NewCTR(block, iv)
+
+	plainText := make([]byte, len(cipherData))
+	stream.XORKeyStream(plainText, cipherData)
+
+	return string(plainText), nil
 }
 
 func isAuthenticated(r *http.Request) bool {
@@ -336,6 +387,12 @@ func chatHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Ошибка получения данных", http.StatusInternalServerError)
 			return
 		}
+		decrypted, err := decrypt(message.Content, key)
+		if err != nil {
+			message.Content = "[ошибка расшифровки]"
+		} else {
+			message.Content = decrypted
+		}
 		messages = append(messages, message)
 	}
 
@@ -435,7 +492,11 @@ func wsChatHandler(w http.ResponseWriter, r *http.Request) {
 		msg.Username = username
 
 		// Шифруем сообщение перед сохранением
-		encryptedContent := msg.Content
+		encryptedContent, err := encrypt(msg.Content, key)
+		if err != nil {
+			log.Println("Ошибка шифрования сообщения:", err)
+			break
+		}
 
 		// Используем RETURNING для получения ID вставленного сообщения
 		err = db.QueryRow("INSERT INTO messages (chat_id, user_id, content) VALUES ($1, $2, $3) RETURNING id", msg.ChatID, msg.UserID, encryptedContent).Scan(&msg.ID)
@@ -448,7 +509,11 @@ func wsChatHandler(w http.ResponseWriter, r *http.Request) {
 		for client := range clients {
 			if client.ChatID == msg.ChatID {
 				// Дешифруем сообщение перед отправкой
-				decryptedContent := msg.Content
+				decryptedContent, err := decrypt(encryptedContent, key)
+				if err != nil {
+					log.Println("Ошибка дешифрования сообщения:", err)
+					break
+				}
 
 				msg.Content = decryptedContent
 				if err := client.Conn.WriteJSON(msg); err != nil {
@@ -655,15 +720,20 @@ func editMessageHandler(w http.ResponseWriter, r *http.Request) {
 	newContent := r.FormValue("content")
 	chatID := r.FormValue("chat_id")
 
-	// Преобразование messageID в int
 	id, err := strconv.Atoi(messageID)
 	if err != nil {
 		http.Error(w, "Неверный идентификатор сообщения", http.StatusBadRequest)
 		return
 	}
 
-	// Обновляем сообщение в базе данных
-	_, err = db.Exec("UPDATE messages SET content = $1 WHERE id = $2", newContent, id)
+	// Шифруем новое содержимое сообщения
+	encryptedContent, err := encrypt(newContent, key)
+	if err != nil {
+		http.Error(w, "Ошибка шифрования сообщения: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	_, err = db.Exec("UPDATE messages SET content = $1 WHERE id = $2", encryptedContent, id)
 	if err != nil {
 		http.Error(w, "Ошибка редактирования сообщения: "+err.Error(), http.StatusInternalServerError)
 		return
@@ -671,7 +741,6 @@ func editMessageHandler(w http.ResponseWriter, r *http.Request) {
 
 	log.Println("Editing message with ID:", id)
 
-	// Получаем имя пользователя, который редактировал сообщение
 	var username string
 	err = db.QueryRow("SELECT u.username FROM messages m JOIN users u ON m.user_id = u.id WHERE m.id = $1", id).Scan(&username)
 	if err != nil {
@@ -679,13 +748,13 @@ func editMessageHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Отправляем уведомление всем клиентам
+	// Отправляем уведомление всем клиентам (с расшифровкой для отображения)
 	for client := range clients {
 		if client.ChatID == atoi(chatID) {
 			err := client.Conn.WriteJSON(map[string]interface{}{
 				"action":   "edit",
 				"id":       id,
-				"content":  newContent,
+				"content":  newContent, // уже расшифрованное содержимое
 				"Username": username,
 			})
 			if err != nil {
