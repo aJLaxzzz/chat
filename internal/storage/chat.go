@@ -5,7 +5,10 @@ import (
 )
 
 func (s *Storage) GetChatByID(chatID int) (*domain.Chat, error) {
-	rows, err := s.db.Query("SELECT id, name, is_private FROM chats WHERE id = $1", chatID)
+	rows, err := s.db.Query(
+		"SELECT id, name, is_private, creator_id, created_at FROM chats WHERE id = $1",
+		chatID,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -13,7 +16,13 @@ func (s *Storage) GetChatByID(chatID int) (*domain.Chat, error) {
 
 	var chat domain.Chat
 	if rows.Next() {
-		if err := rows.Scan(&chat.ID, &chat.Name, &chat.IsPrivate); err != nil {
+		if err := rows.Scan(
+			&chat.ID,
+			&chat.Name,
+			&chat.IsPrivate,
+			&chat.CreatorID,
+			&chat.CreatedAt,
+		); err != nil {
 			return nil, err
 		}
 	} else {

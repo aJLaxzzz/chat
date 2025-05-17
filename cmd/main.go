@@ -19,6 +19,8 @@ func main() {
 	if err != nil {
 		log.Fatalf("storage.NewStorage: %v", err)
 	}
+	defer storage.Close()
+
 	memory := memory.NewService(cfg)
 	cipher := cipher.NewService(cfg)
 

@@ -15,8 +15,8 @@ func (s *Storage) GetUserIDByUsername(username string) (int, error) {
 
 func (s *Storage) GetUserByUsername(username string) (domain.User, error) {
 	var user domain.User
-	err := s.db.QueryRow("SELECT id, password, surname, name, patronymic FROM users WHERE username = $1", username).
-		Scan(&user.ID, &user.Password, &user.Surname, &user.Name, &user.Patronymic)
+	err := s.db.QueryRow("SELECT id, username, name, surname, patronymic, password FROM users WHERE username = $1", username).
+		Scan(&user.ID, &user.Username, &user.Name, &user.Surname, &user.Patronymic, &user.Password)
 	if err != nil {
 		return domain.User{}, err
 	}
@@ -25,8 +25,8 @@ func (s *Storage) GetUserByUsername(username string) (domain.User, error) {
 
 func (s *Storage) GetUserByID(id int) (domain.User, error) {
 	var user domain.User
-	err := s.db.QueryRow("SELECT id, surname, name, patronymic FROM users WHERE username = $1", id).
-		Scan(&user.ID, &user.Surname, &user.Name, &user.Patronymic)
+	err := s.db.QueryRow("SELECT id, username, name, surname, patronymic FROM users WHERE id = $1", id).
+		Scan(&user.ID, &user.Username, &user.Name, &user.Surname, &user.Patronymic)
 	if err != nil {
 		return domain.User{}, err
 	}
