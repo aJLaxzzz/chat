@@ -20,9 +20,12 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+    restart: always
 
   app:
-    build: .
+    build: 
+      dockerfile: ./Dockerfile
+      network: host
     container_name: chat-app
     ports:
       - "127.0.0.1:8080:8080"
@@ -31,6 +34,7 @@ services:
         condition: service_healthy
     networks:
       - chat-network
+    restart: always
 
 volumes:
   postgres_data:
