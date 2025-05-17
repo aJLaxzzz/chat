@@ -19,6 +19,7 @@ func (a *App) editMessageHandler(w http.ResponseWriter, r *http.Request) {
 
 	id, err := strconv.Atoi(messageID)
 	if err != nil {
+		log.Printf("editMessageHandler: strconv.Atoi: %v", err)
 		http.Error(w, "Неверный идентификатор сообщения", http.StatusBadRequest)
 		return
 	}
@@ -26,12 +27,14 @@ func (a *App) editMessageHandler(w http.ResponseWriter, r *http.Request) {
 	// Шифруем новое содержимое сообщения
 	encryptedContent, err := a.cipher.Encrypt(newContent)
 	if err != nil {
+		log.Printf("editMessageHandler: cipher.Encrypt: %v", err)
 		http.Error(w, "Ошибка шифрования сообщения: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 
 	err = a.storage.UpdateMessageContent(messageID, encryptedContent)
 	if err != nil {
+		log.Printf("editMessageHandler: storage.UpdateMessageContent: %v", err)
 		http.Error(w, "Ошибка редактирования сообщения: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -39,6 +42,7 @@ func (a *App) editMessageHandler(w http.ResponseWriter, r *http.Request) {
 	log.Println("Editing message with ID:", id)
 	username, err := a.storage.GetUsernameByMessageID(id)
 	if err != nil {
+		log.Printf("editMessageHandler: storage.GetUsernameByMessageID: %v", err)
 		http.Error(w, "Ошибка получения имени пользователя: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -53,7 +57,7 @@ func (a *App) editMessageHandler(w http.ResponseWriter, r *http.Request) {
 			"Username": username,
 		})
 		if err != nil {
-			log.Println("Ошибка отправки уведомления об редактировании:", err)
+			log.Printf("editMessageHandler: client.Conn.WriteJSON: %v", err)
 			client.Conn.Close()
 			a.memory.DeleteClient(client)
 		}

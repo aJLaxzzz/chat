@@ -4,6 +4,7 @@ import (
 	"chat/internal/config"
 	"chat/internal/domain"
 	"html/template"
+	"log"
 	"net/http"
 	"path/filepath"
 	"strconv"
@@ -20,6 +21,7 @@ func (a *App) createGroupChatHandler(w http.ResponseWriter, r *http.Request) {
 
 	currentUserID, err := a.storage.GetUserIDByUsername(username)
 	if err != nil {
+		log.Printf("createGroupChatHandler: storage.GetUserIDByUsername: %v", err)
 		http.Error(w, "Ошибка получения пользователя", http.StatusInternalServerError)
 		return
 	}
@@ -36,6 +38,7 @@ func (a *App) createGroupChatHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		chat.ID, err = a.storage.InsertChat(chat)
 		if err != nil {
+			log.Printf("createGroupChatHandler: storage.InsertChat: %v", err)
 			http.Error(w, "Ошибка создания чата", http.StatusInternalServerError)
 			return
 		}
@@ -43,6 +46,7 @@ func (a *App) createGroupChatHandler(w http.ResponseWriter, r *http.Request) {
 		// Добавляем создателя в таблицу chat_users
 		err = a.storage.AddUserToChat(chat.ID, currentUserID)
 		if err != nil {
+			log.Printf("createGroupChatHandler: storage.AddUserToChat: %v", err)
 			http.Error(w, "Ошибка добавления пользователя в чат", http.StatusInternalServerError)
 			return
 		}
@@ -52,11 +56,13 @@ func (a *App) createGroupChatHandler(w http.ResponseWriter, r *http.Request) {
 		for _, userIDToAddStr := range userIDs {
 			userIDToAdd, err := strconv.Atoi(userIDToAddStr)
 			if err != nil {
+				log.Printf("createGroupChatHandler: strconv.Atoi: %v", err)
 				http.Error(w, "Ошибка получения ID пользователя", http.StatusBadRequest)
 				return
 			}
 			err = a.storage.AddUserToChat(chat.ID, userIDToAdd)
 			if err != nil {
+				log.Printf("createGroupChatHandler: storage.AddUserToChat: %v", err)
 				http.Error(w, "Ошибка добавления пользователя в чат", http.StatusInternalServerError)
 				return
 			}
@@ -70,6 +76,7 @@ func (a *App) createGroupChatHandler(w http.ResponseWriter, r *http.Request) {
 	// Получаем всех пользователей для выбора, исключая текущего пользователя
 	users, err := a.storage.GetAllOtherUsers(username)
 	if err != nil {
+		log.Printf("createGroupChatHandler: storage.GetAllOtherUsers: %v", err)
 		http.Error(w, "Ошибка получения пользователей", http.StatusInternalServerError)
 		return
 	}

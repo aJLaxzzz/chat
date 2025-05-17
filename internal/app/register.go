@@ -4,6 +4,7 @@ import (
 	"chat/internal/config"
 	"chat/internal/domain"
 	"html/template"
+	"log"
 	"net/http"
 	"path/filepath"
 
@@ -25,6 +26,7 @@ func (a *App) registerHandler(w http.ResponseWriter, r *http.Request) {
 
 		hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 		if err != nil {
+			log.Printf("registerHandler: bcrypt.GenerateFromPassword: %v", err)
 			http.Error(w, "Ошибка регистрации", http.StatusInternalServerError)
 			return
 		}
@@ -38,6 +40,7 @@ func (a *App) registerHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		err = a.storage.InsertUser(user)
 		if err != nil {
+			log.Printf("registerHandler: storage.InsertUser: %v", err)
 			http.Error(w, "Ошибка регистрации", http.StatusInternalServerError)
 			return
 		}
@@ -46,12 +49,14 @@ func (a *App) registerHandler(w http.ResponseWriter, r *http.Request) {
 		session.Values["username"] = username
 		err = session.Save(r, w)
 		if err != nil {
+			log.Printf("registerHandler: session.Save: %v", err)
 			http.Error(w, "Ошибка сохранения сессии", http.StatusInternalServerError)
 			return
 		}
 
 		err = a.storage.UpdateUserStatus(username, "online")
 		if err != nil {
+			log.Printf("registerHandler: storage.UpdateUserStatus: %v", err)
 			http.Error(w, "Ошибка обновления статуса", http.StatusInternalServerError)
 			return
 		}

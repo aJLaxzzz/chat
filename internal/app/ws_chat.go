@@ -14,7 +14,7 @@ func (a *App) wsChatHandler(w http.ResponseWriter, r *http.Request) {
 	chatID := mux.Vars(r)["id"]
 	conn, err := a.upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		log.Println("Ошибка при подключении WebSocket:", err)
+		log.Printf("wsChatHandler: upgrader.Upgrade: %v", err)
 		return
 	}
 	defer conn.Close()
@@ -24,7 +24,7 @@ func (a *App) wsChatHandler(w http.ResponseWriter, r *http.Request) {
 
 	userID, err := a.storage.GetUserIDByUsername(username)
 	if err != nil {
-		log.Println("Ошибка получения ID пользователя:", err)
+		log.Printf("wsChatHandler: storage.GetUserIDByUsername: %v", err)
 		return
 	}
 
@@ -36,7 +36,7 @@ func (a *App) wsChatHandler(w http.ResponseWriter, r *http.Request) {
 		var msg domain.Message
 		err := conn.ReadJSON(&msg)
 		if err != nil {
-			log.Println("Ошибка чтения сообщения:", err)
+			log.Printf("wsChatHandler: conn.ReadJSON: %v", err)
 			break
 		}
 		msg.ChatID, _ = strconv.Atoi(chatID)
@@ -46,7 +46,7 @@ func (a *App) wsChatHandler(w http.ResponseWriter, r *http.Request) {
 		// Шифруем сообщение перед сохранением
 		encryptedContent, err := a.cipher.Encrypt(msg.Content)
 		if err != nil {
-			log.Println("Ошибка шифрования сообщения:", err)
+			log.Printf("wsChatHandler: cipher.Encrypt: %v", err)
 			break
 		}
 
@@ -54,7 +54,7 @@ func (a *App) wsChatHandler(w http.ResponseWriter, r *http.Request) {
 		msg.Content = encryptedContent
 		msg.ID, err = a.storage.InsertMessage(msg)
 		if err != nil {
-			log.Println("Ошибка сохранения сообщения:", err)
+			log.Printf("wsChatHandler: storage.InsertMessage: %v", err)
 			break
 		}
 
@@ -64,13 +64,13 @@ func (a *App) wsChatHandler(w http.ResponseWriter, r *http.Request) {
 			// Дешифруем сообщение перед отправкой
 			decryptedContent, err := a.cipher.Decrypt(encryptedContent)
 			if err != nil {
-				log.Println("Ошибка дешифрования сообщения:", err)
+				log.Printf("wsChatHandler: cipher.Decrypt: %v", err)
 				break
 			}
 
 			msg.Content = decryptedContent
 			if err := client.Conn.WriteJSON(msg); err != nil {
-				log.Println("Ошибка отправки сообщения:", err)
+				log.Printf("wsChatHandler: client.Conn.WriteJSON: %v", err)
 				client.Conn.Close()
 				a.memory.DeleteClient(client)
 			}

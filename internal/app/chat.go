@@ -5,6 +5,7 @@ import (
 	"chat/internal/domain"
 	"chat/internal/utils"
 	"html/template"
+	"log"
 	"net/http"
 	"path/filepath"
 
@@ -22,6 +23,7 @@ func (a *App) chatHandler(w http.ResponseWriter, r *http.Request) {
 	// Получаем информацию о чате
 	chat, err := a.storage.GetChatByID(utils.Atoi(chatID))
 	if err != nil {
+		log.Printf("chatHandler: storage.GetChatByID: %v", err)
 		http.Error(w, "Ошибка получения чата", http.StatusInternalServerError)
 		return
 	} else if chat == nil {
@@ -32,12 +34,14 @@ func (a *App) chatHandler(w http.ResponseWriter, r *http.Request) {
 	// Получаем сообщения чата
 	messages, err := a.storage.GetMessagesByChatID(utils.Atoi(chatID))
 	if err != nil {
+		log.Printf("chatHandler: GetMessagesByChatID: %v", err)
 		http.Error(w, "Ошибка получения сообщений", http.StatusInternalServerError)
 		return
 	}
 	for _, message := range messages {
 		decrypted, err := a.cipher.Decrypt(message.Content)
 		if err != nil {
+			log.Printf("chatHandler: cipher.Decrypt: %v", err)
 			message.Content = "[ошибка расшифровки]"
 		} else {
 			message.Content = decrypted
@@ -47,6 +51,7 @@ func (a *App) chatHandler(w http.ResponseWriter, r *http.Request) {
 	// Получаем участников чата
 	participants, err := a.storage.GetChatMembersByChatID(utils.Atoi(chatID))
 	if err != nil {
+		log.Printf("chatHandler: storage.GetChatMembersByChatID: %v", err)
 		http.Error(w, "Ошибка получения участников чата", http.StatusInternalServerError)
 		return
 	}
@@ -57,6 +62,7 @@ func (a *App) chatHandler(w http.ResponseWriter, r *http.Request) {
 
 	currentUserID, err := a.storage.GetUserIDByUsername(username)
 	if err != nil {
+		log.Printf("chatHandler: storage.GetUserIDByUsername: %v", err)
 		http.Error(w, "Ошибка получения текущего пользователя", http.StatusInternalServerError)
 		return
 	}

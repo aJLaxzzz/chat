@@ -18,6 +18,7 @@ func (a *App) deleteMessageHandler(w http.ResponseWriter, r *http.Request) {
 	// Удаляем сообщение из базы данных
 	err := a.storage.DeleteMessage(messageID)
 	if err != nil {
+		log.Printf("deleteMessageHandler: storage.DeleteMessage: %v", err)
 		http.Error(w, "Ошибка удаления сообщения", http.StatusInternalServerError)
 		return
 	}
@@ -30,7 +31,7 @@ func (a *App) deleteMessageHandler(w http.ResponseWriter, r *http.Request) {
 			"id":     messageID,
 		})
 		if err != nil {
-			log.Println("Ошибка отправки уведомления об удалении:", err)
+			log.Printf("deleteMessageHandler: client.Conn.WriteJSON: %v", err)
 			client.Conn.Close()
 			a.memory.DeleteClient(client)
 		}

@@ -1,6 +1,9 @@
 package app
 
-import "net/http"
+import (
+	"log"
+	"net/http"
+)
 
 func (a *App) logoutHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
@@ -18,6 +21,7 @@ func (a *App) logoutHandler(w http.ResponseWriter, r *http.Request) {
 
 	err := a.storage.UpdateUserStatus(username, "offline")
 	if err != nil {
+		log.Printf("logoutHandler: storage.UpdateUserStatus: %v", err)
 		http.Error(w, "Ошибка обновления статуса", http.StatusInternalServerError)
 		return
 	}

@@ -5,6 +5,7 @@ import (
 	"chat/internal/domain"
 	"fmt"
 	"html/template"
+	"log"
 	"net/http"
 	"path/filepath"
 )
@@ -20,12 +21,14 @@ func (a *App) chatsHandler(w http.ResponseWriter, r *http.Request) {
 
 	user, err := a.storage.GetUserByUsername(username)
 	if err != nil {
+		log.Printf("chatsHandler: storage.GetUserByUsername: %v", err)
 		http.Error(w, "Ошибка получения пользователя", http.StatusInternalServerError)
 		return
 	}
 
 	chats, err := a.storage.GetChatsByUserID(user.ID)
 	if err != nil {
+		log.Printf("chatsHandler: storage.GetChatsByUserID: %v", err)
 		http.Error(w, "Ошибка получения чатов", http.StatusInternalServerError)
 		return
 	}
